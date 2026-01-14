@@ -21,5 +21,4 @@ urlpatterns = [
     path("borradores/mios/", BorradoresMiosView.as_view(), name="borrador_mios"),
     path("borradores/<uuid:borrador_id>/",BorradoresUpdateDeleteView.as_view(),name="borrador_put_delete"),
     path("borradores/<uuid:borrador_id>/finalizar/",BorradoresFinalizarManualView.as_view(),name="borrador_finalizar"),
-
 ]

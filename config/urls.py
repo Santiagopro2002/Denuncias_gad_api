@@ -28,9 +28,6 @@ urlpatterns = [
     path("api/faq/", include("faq_api.urls")),
     path("api/chatbot/", include("chatbot_api.urls")),
 
-
-    
-
 ]
 
 if settings.DEBUG:

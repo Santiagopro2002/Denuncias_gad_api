@@ -1,17 +1,14 @@
-from django.shortcuts import render
-
-# Create your views here.
 import json
+import re
 import uuid
 
 from django.conf import settings
-from django.utils import timezone
 from django.db import transaction
+from django.utils import timezone
 
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
-from rest_framework import status
 
 from openai import OpenAI
 
@@ -25,7 +22,7 @@ from db.models import (
 )
 
 # =========================================================
-# Helpers JWT (igual que el tuyo)
+# Helpers JWT
 # =========================================================
 def get_claim(request, key: str, default=None):
     token = getattr(request, "auth", None)
@@ -41,12 +38,11 @@ def get_claim(request, key: str, default=None):
 # OpenAI client
 # =========================================================
 def _client():
-    #return OpenAI(api_key=getattr(settings, "OPENAI_API_KEY", None))
     return OpenAI(api_key=settings.OPENAI_API_KEY)
 
 
 # =========================================================
-# Tools (function calling)
+# Tools (Responses API format)
 # =========================================================
 TOOLS = [
     {
@@ -61,16 +57,14 @@ TOOLS = [
         "description": "Devuelve el borrador actual (datos_json) para verificar qué falta.",
         "parameters": {
             "type": "object",
-            "properties": {
-                "borrador_id": {"type": "string", "description": "UUID del borrador"},
-            },
+            "properties": {"borrador_id": {"type": "string"}},
             "required": ["borrador_id"],
         },
     },
     {
         "type": "function",
         "name": "update_borrador",
-        "description": "Actualiza parcialmente campos del borrador (tipo, descripcion, referencia, latitud, longitud, direccion_texto).",
+        "description": "Actualiza parcialmente campos del borrador.",
         "parameters": {
             "type": "object",
             "properties": {
@@ -78,9 +72,9 @@ TOOLS = [
                 "tipo_denuncia_id": {"type": "integer"},
                 "descripcion": {"type": "string"},
                 "referencia": {"type": "string"},
+                "direccion_texto": {"type": "string"},
                 "latitud": {"type": "number"},
                 "longitud": {"type": "number"},
-                "direccion_texto": {"type": "string"},
             },
             "required": ["borrador_id"],
         },
@@ -88,15 +82,12 @@ TOOLS = [
     {
         "type": "function",
         "name": "finalizar_denuncia",
-        "description": "Finaliza: crea la denuncia en la tabla denuncias (origen=chat) usando el borrador. Devuelve denuncia_id. Solo si están completos los campos.",
+        "description": "Finaliza: crea la denuncia (origen=chat) usando el borrador. Devuelve denuncia_id.",
         "parameters": {
             "type": "object",
             "properties": {
                 "borrador_id": {"type": "string"},
-                "confirmacion": {
-                    "type": "boolean",
-                    "description": "Debe ser true solo si el usuario ya confirmó que desea enviar.",
-                },
+                "confirmacion": {"type": "boolean"},
             },
             "required": ["borrador_id", "confirmacion"],
         },
@@ -104,57 +95,129 @@ TOOLS = [
 ]
 
 
+# =========================================================
+# Instrucciones del asistente
+# =========================================================
+INSTRUCTIONS = """
+Eres un asistente del GAD Municipal de Salcedo para ayudar a ciudadanos a redactar denuncias municipales.
+Tu objetivo: recolectar datos para una denuncia: tipo_denuncia_id, descripcion, latitud, longitud, y opcional referencia/direccion_texto.
+Haz preguntas cortas, una por una, para completar campos faltantes.
+
+Reglas:
+- Si el usuario pregunta algo NO relacionado a denuncias municipales o uso de la app, responde: "Solo puedo ayudarte con denuncias municipales y uso de la app."
+- Antes de finalizar, confirma: "¿Deseas enviar la denuncia ahora? (sí/no)".
+- Solo llama a finalizar_denuncia cuando el usuario confirme explícitamente "sí".
+- No inventes latitud/longitud: si no existen, pide que el usuario envíe ubicación.
+""".strip()
+
+
+# =========================================================
+# Extractores (para evitar ciclos)
+# =========================================================
+_re_tipo = re.compile(r"(?:^|\b)tipo\s*:\s*([^\n\.]+)", re.IGNORECASE)
+_re_desc = re.compile(r"(?:^|\b)(?:descripcion|descripción)\s*:\s*(.+)", re.IGNORECASE)
+_re_latlng = re.compile(
+    r"(?:lat(?:itud)?)\s*[:=]?\s*(-?\d+(?:\.\d+)?)\s*.*?(?:lon(?:gitud)?|lng)\s*[:=]?\s*(-?\d+(?:\.\d+)?)",
+    re.IGNORECASE | re.DOTALL,
+)
+_re_ref = re.compile(r"(?:^|\b)referencia\s*:\s*(.+)", re.IGNORECASE)
+_re_dir = re.compile(r"(?:^|\b)(?:direccion|dirección)\s*:\s*(.+)", re.IGNORECASE)
+
+
+def _match_tipo_to_id(nombre: str):
+    """
+    Intenta mapear texto de tipo -> TiposDenuncia.id por coincidencia simple.
+    """
+    if not nombre:
+        return None
+    n = nombre.strip().lower()
+
+    qs = TiposDenuncia.objects.filter(activo=True)
+    for t in qs:
+        if t.nombre and t.nombre.strip().lower() in n or n in t.nombre.strip().lower():
+            return int(t.id)
+
+    # heurística mínima (puedes ampliar luego)
+    if "basura" in n or "aseo" in n:
+        t = TiposDenuncia.objects.filter(activo=True, nombre__icontains="basura").first()
+        if t:
+            return int(t.id)
+
+    return None
+
+
+def _extract_fields_from_text(text: str):
+    """
+    Extrae campos si vienen explícitos en el texto.
+    """
+    out = {}
+
+    m = _re_tipo.search(text)
+    if m:
+        out["tipo_texto"] = m.group(1).strip()
+
+    m = _re_desc.search(text)
+    if m:
+        out["descripcion"] = m.group(1).strip()
+
+    m = _re_latlng.search(text)
+    if m:
+        out["latitud"] = float(m.group(1))
+        out["longitud"] = float(m.group(2))
+
+    m = _re_ref.search(text)
+    if m:
+        out["referencia"] = m.group(1).strip()
+
+    m = _re_dir.search(text)
+    if m:
+        out["direccion_texto"] = m.group(1).strip()
+
+    return out
+
+
+# =========================================================
+# Tools backend
+# =========================================================
 def _execute_tool(uid: str, tool_name: str, args: dict):
-    """
-    Ejecuta lógica de tools en tu backend.
-    Retorna dict serializable.
-    """
     if tool_name == "get_tipos_denuncia":
         qs = TiposDenuncia.objects.filter(activo=True).order_by("nombre")
-        return {
-            "tipos": [{"id": int(x.id), "nombre": x.nombre} for x in qs]
-        }
+        return {"tipos": [{"id": int(x.id), "nombre": x.nombre} for x in qs]}
 
     if tool_name == "get_borrador":
         borrador_id = args["borrador_id"]
-        try:
-            b = DenunciaBorradores.objects.get(id=borrador_id, ciudadano_id=uid)
-        except DenunciaBorradores.DoesNotExist:
+        b = DenunciaBorradores.objects.filter(id=borrador_id, ciudadano_id=uid).first()
+        if not b:
             return {"error": "borrador_no_existe"}
         return {"borrador_id": str(b.id), "datos": b.datos_json or {}, "listo_para_enviar": bool(b.listo_para_enviar)}
 
     if tool_name == "update_borrador":
         borrador_id = args["borrador_id"]
-        try:
-            b = DenunciaBorradores.objects.get(id=borrador_id, ciudadano_id=uid)
-        except DenunciaBorradores.DoesNotExist:
+        b = DenunciaBorradores.objects.filter(id=borrador_id, ciudadano_id=uid).first()
+        if not b:
             return {"error": "borrador_no_existe"}
 
         data = b.datos_json or {}
-        # merge solo lo enviado
         for k in ["tipo_denuncia_id", "descripcion", "referencia", "latitud", "longitud", "direccion_texto"]:
             if k in args and args[k] is not None:
                 data[k] = args[k]
 
-        # marca origen chat
         data["origen"] = "chat"
 
-        b.datos_json = data
-        b.updated_at = timezone.now()
-        b.save(update_fields=["datos_json", "updated_at"])
-
-        # verificar completitud mínima
+        # completitud mínima
         ok = (
             bool(data.get("tipo_denuncia_id"))
             and bool(data.get("descripcion"))
             and data.get("latitud") is not None
             and data.get("longitud") is not None
         )
-        if ok:
-            b.listo_para_enviar = True
-            b.save(update_fields=["listo_para_enviar"])
 
-        return {"updated": True, "listo_para_enviar": ok, "datos": data}
+        b.datos_json = data
+        b.listo_para_enviar = bool(ok)
+        b.updated_at = timezone.now()
+        b.save(update_fields=["datos_json", "listo_para_enviar", "updated_at"])
+
+        return {"updated": True, "listo_para_enviar": bool(ok), "datos": data}
 
     if tool_name == "finalizar_denuncia":
         borrador_id = args["borrador_id"]
@@ -163,82 +226,80 @@ def _execute_tool(uid: str, tool_name: str, args: dict):
         if not confirm:
             return {"error": "no_confirmado"}
 
-        try:
-            b = DenunciaBorradores.objects.select_for_update().get(id=borrador_id, ciudadano_id=uid)
-        except DenunciaBorradores.DoesNotExist:
-            return {"error": "borrador_no_existe"}
+        with transaction.atomic():
+            b = DenunciaBorradores.objects.select_for_update().filter(id=borrador_id, ciudadano_id=uid).first()
+            if not b:
+                return {"error": "borrador_no_existe"}
 
-        data = b.datos_json or {}
-        # validación mínima
-        tipo_denuncia_id = data.get("tipo_denuncia_id")
-        descripcion = data.get("descripcion")
-        latitud = data.get("latitud")
-        longitud = data.get("longitud")
-        if not tipo_denuncia_id or not descripcion or latitud is None or longitud is None:
-            return {"error": "borrador_incompleto", "datos": data}
+            data = b.datos_json or {}
+            tipo_denuncia_id = data.get("tipo_denuncia_id")
+            descripcion = data.get("descripcion")
+            latitud = data.get("latitud")
+            longitud = data.get("longitud")
 
-        now = timezone.now()
-        d = Denuncias.objects.create(
-            id=uuid.uuid4(),
-            ciudadano_id=uid,
-            tipo_denuncia_id=int(tipo_denuncia_id),
-            descripcion=str(descripcion),
-            referencia=data.get("referencia"),
-            latitud=float(latitud),
-            longitud=float(longitud),
-            direccion_texto=data.get("direccion_texto"),
-            origen="chat",
-            estado="pendiente",
-            created_at=now,
-            updated_at=now,
-        )
+            if not tipo_denuncia_id or not descripcion or latitud is None or longitud is None:
+                return {"error": "borrador_incompleto", "datos": data}
 
-        # vincular conversación si existe
-        if b.conversacion_id:
-            try:
-                conv = b.conversacion
-                conv.denuncia_id = d.id
-                conv.updated_at = now
-                conv.save(update_fields=["denuncia_id", "updated_at"])
-            except Exception:
-                pass
+            now = timezone.now()
+            d = Denuncias.objects.create(
+                id=uuid.uuid4(),
+                ciudadano_id=uid,
+                tipo_denuncia_id=int(tipo_denuncia_id),
+                descripcion=str(descripcion),
+                referencia=data.get("referencia"),
+                latitud=float(latitud),
+                longitud=float(longitud),
+                direccion_texto=data.get("direccion_texto"),
+                origen="chat",
+                estado="pendiente",
+                created_at=now,
+                updated_at=now,
+            )
 
-        b.delete()
+            # vincular conversación
+            if b.conversacion_id:
+                ChatConversaciones.objects.filter(id=b.conversacion_id).update(denuncia_id=d.id, updated_at=now)
+
+            # borrar borrador (ya pasó a denuncia)
+            b.delete()
+
         return {"ok": True, "denuncia_id": str(d.id)}
 
     return {"error": "tool_desconocida"}
 
 
 # =========================================================
-# Prompts / instrucciones (NO hardcode feo, pero sí reglas)
+# Historial -> input messages
 # =========================================================
-INSTRUCTIONS = """
-Eres un asistente del GAD Municipal de Salcedo para ayudar a ciudadanos a redactar denuncias municipales.
-Tu objetivo: recolectar datos para una denuncia: tipo_denuncia_id, descripcion, latitud, longitud, y opcional referencia/direccion_texto.
-Debes hacer preguntas cortas, una por una, para completar los campos faltantes.
-
-Reglas:
-- Si el usuario pregunta algo NO relacionado a denuncias municipales o uso de la app, responde: "Solo puedo ayudarte con denuncias municipales y uso de la app."
-- Antes de finalizar, confirma con el usuario: "¿Deseas enviar la denuncia ahora? (sí/no)".
-- Solo llama a finalizar_denuncia cuando el usuario confirme explícitamente "sí".
-- Usa herramientas (tools) para leer tipos y guardar datos en el borrador.
-- No inventes latitud/longitud: si no existen, pide que el usuario envíe su ubicación o que la app la comparta.
-""".strip()
-
-
-def _to_openai_input_messages(conv_id: str):
-    """
-    Convierte historial DB -> formato input del Responses API.
-    Mantiene últimos ~30 mensajes para no crecer infinito.
-    """
+def _to_openai_messages(conv_id: str):
     qs = ChatMensajes.objects.filter(conversacion_id=conv_id).order_by("created_at")
     msgs = list(qs)[-30:]
-
     out = []
     for m in msgs:
         role = "user" if m.emisor == "usuario" else "assistant"
         out.append({"role": role, "content": m.mensaje})
     return out
+
+
+def _iter_function_calls(resp):
+    """
+    Itera function_call items de resp.output soportando dict u objeto.
+    """
+    for item in (resp.output or []):
+        if isinstance(item, dict):
+            if item.get("type") == "function_call":
+                yield {
+                    "call_id": item.get("call_id"),
+                    "name": item.get("name"),
+                    "arguments": item.get("arguments"),
+                }
+        else:
+            if getattr(item, "type", None) == "function_call":
+                yield {
+                    "call_id": getattr(item, "call_id", None),
+                    "name": getattr(item, "name", None),
+                    "arguments": getattr(item, "arguments", None),
+                }
 
 
 class ChatbotStartView(APIView):
@@ -271,19 +332,15 @@ class ChatbotStartView(APIView):
                 created_at=now,
                 updated_at=now,
             )
-            # mensaje inicial del bot
             ChatMensajes.objects.create(
                 id=uuid.uuid4(),
                 conversacion_id=conv.id,
                 emisor="bot",
-                mensaje="Hola 👋 Soy tu asistente. ¿Qué deseas denunciar hoy? (Ej: basura, alumbrado, vías...)",
+                mensaje="Hola 👋 ¿Qué deseas denunciar hoy? (Ej: basura, alumbrado, vías...)",
                 created_at=now,
             )
 
-        return Response(
-            {"conversacion_id": str(conv.id), "borrador_id": str(borr.id)},
-            status=201
-        )
+        return Response({"conversacion_id": str(conv.id), "borrador_id": str(borr.id)}, status=201)
 
 
 class ChatbotMessageView(APIView):
@@ -297,21 +354,19 @@ class ChatbotMessageView(APIView):
 
         conv_id = (request.data.get("conversacion_id") or "").strip()
         text = (request.data.get("mensaje") or "").strip()
-
         if not conv_id or not text:
             return Response({"detail": "conversacion_id y mensaje son obligatorios"}, status=400)
 
-        try:
-            conv = ChatConversaciones.objects.get(id=conv_id, ciudadano_id=uid)
-        except ChatConversaciones.DoesNotExist:
+        conv = ChatConversaciones.objects.filter(id=conv_id, ciudadano_id=uid).first()
+        if not conv:
             return Response({"detail": "Conversación no existe"}, status=404)
 
-        # buscar borrador ligado a la conversación
         borr = DenunciaBorradores.objects.filter(conversacion_id=conv_id, ciudadano_id=uid).first()
         if not borr:
             return Response({"detail": "Borrador no encontrado para esta conversación"}, status=404)
 
         now = timezone.now()
+
         # guardar mensaje usuario
         ChatMensajes.objects.create(
             id=uuid.uuid4(),
@@ -321,18 +376,45 @@ class ChatbotMessageView(APIView):
             created_at=now,
         )
 
-        # construir input para OpenAI
-        history = _to_openai_input_messages(conv_id)
-        # añadimos contexto mínimo (borrador_id) para que el modelo sepa qué actualizar
-        # OJO: esto NO es "texto quemado de respuestas", es metadata de operación.
-        history.append({
-            "role": "user",
-            "content": f"(contexto interno: borrador_id={borr.id})"
-        })
+        # 0) extracción rápida para evitar bucles
+        extracted = _extract_fields_from_text(text)
+        update_payload = {"borrador_id": str(borr.id)}
 
+        if "tipo_texto" in extracted:
+            tipo_id = _match_tipo_to_id(extracted["tipo_texto"])
+            if tipo_id:
+                update_payload["tipo_denuncia_id"] = tipo_id
+
+        for k in ["descripcion", "referencia", "direccion_texto", "latitud", "longitud"]:
+            if k in extracted:
+                update_payload[k] = extracted[k]
+
+        if len(update_payload.keys()) > 1:
+            _execute_tool(str(uid), "update_borrador", update_payload)
+            borr.refresh_from_db()
+
+        # 1) si ya está listo y el usuario confirma -> finalizar directo (sin LLM)
+        texto_norm = text.strip().lower()
+        if borr.listo_para_enviar and texto_norm in ("si", "sí", "si.", "sí.", "enviar", "confirmo", "confirmo enviar"):
+            r = _execute_tool(str(uid), "finalizar_denuncia", {"borrador_id": str(borr.id), "confirmacion": True})
+            if r.get("ok"):
+                ChatMensajes.objects.create(
+                    id=uuid.uuid4(),
+                    conversacion_id=conv_id,
+                    emisor="bot",
+                    mensaje=f"✅ Denuncia enviada. ID: {r['denuncia_id']}",
+                    created_at=timezone.now(),
+                )
+                return Response(
+                    {"respuesta": f"✅ Denuncia enviada. ID: {r['denuncia_id']}", "conversacion_id": str(conv_id), "denuncia_id": r["denuncia_id"]},
+                    status=200,
+                )
+
+        # 2) LLM (Responses API correcto)
         client = _client()
+        history = _to_openai_messages(conv_id)
+        history.append({"role": "user", "content": f"(contexto interno: borrador_id={borr.id})"})
 
-        # 1) Primera llamada: el modelo puede pedir tool calls
         resp = client.responses.create(
             model=getattr(settings, "OPENAI_MODEL", "gpt-5"),
             instructions=INSTRUCTIONS,
@@ -340,38 +422,41 @@ class ChatbotMessageView(APIView):
             input=history,
         )
 
-        input_list = history + resp.output  # acumulamos
+        # 3) loop de tools usando previous_response_id (máx 5 rondas)
+        for _ in range(5):
+            calls = list(_iter_function_calls(resp))
+            if not calls:
+                break
 
-        # 2) Ejecutar tool calls si aparecen
-        tool_outputs = []
-        for item in resp.output:
-            if getattr(item, "type", None) == "function_call":
-                name = item.name
-                args = json.loads(item.arguments or "{}")
+            tool_outputs = []
+            for c in calls:
+                name = c["name"]
+                call_id = c["call_id"]
+                try:
+                    args = json.loads(c["arguments"] or "{}")
+                except Exception:
+                    args = {}
+
                 result = _execute_tool(str(uid), name, args)
+
                 tool_outputs.append({
                     "type": "function_call_output",
-                    "call_id": item.call_id,
+                    "call_id": call_id,
                     "output": json.dumps(result, ensure_ascii=False),
                 })
 
-        # 3) Si hubo tools, segunda llamada para obtener texto final
-        if tool_outputs:
-            input_list.extend(tool_outputs)
-            resp2 = client.responses.create(
+            resp = client.responses.create(
                 model=getattr(settings, "OPENAI_MODEL", "gpt-5"),
                 instructions=INSTRUCTIONS,
                 tools=TOOLS,
-                input=input_list,
+                previous_response_id=resp.id,
+                input=tool_outputs,
             )
-            bot_text = resp2.output_text.strip()
-        else:
-            bot_text = (resp.output_text or "").strip()
 
+        bot_text = (resp.output_text or "").strip()
         if not bot_text:
-            bot_text = "Listo. ¿Me confirmas el tipo de denuncia y una breve descripción?"
+            bot_text = "¿Me confirmas el tipo de denuncia y una breve descripción?"
 
-        # guardar mensaje bot
         ChatMensajes.objects.create(
             id=uuid.uuid4(),
             conversacion_id=conv_id,
@@ -380,21 +465,19 @@ class ChatbotMessageView(APIView):
             created_at=timezone.now(),
         )
 
-        # refrescar borrador para mandar snapshot a Flutter
-        borr.refresh_from_db()
-        datos = borr.datos_json or {}
+        # devolver snapshot borrador
+        borr = DenunciaBorradores.objects.filter(conversacion_id=conv_id, ciudadano_id=uid).first()
+        datos = (borr.datos_json if borr else {}) or {}
 
         return Response(
             {
                 "respuesta": bot_text,
                 "conversacion_id": str(conv_id),
                 "borrador": {
-                    "id": str(borr.id),
-                    "listo_para_enviar": bool(borr.listo_para_enviar),
+                    "id": str(borr.id) if borr else None,
+                    "listo_para_enviar": bool(borr.listo_para_enviar) if borr else False,
                     "datos": datos,
                 },
-                # si se finalizó, el borrador se borra, entonces aquí no habrá;
-                # pero en este MVP lo detectas por un mensaje del bot y haces reload de "Mis denuncias".
             },
-            status=200
+            status=200,
         )

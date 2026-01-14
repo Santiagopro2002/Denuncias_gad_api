@@ -153,7 +153,7 @@ class BorradoresUpdateDeleteView(APIView):
         if borrador_expirado(b):
             return Response({"detail": "Borrador expirado: ya no se puede editar"}, status=409)
 
-        # ✅ UPDATE PARCIAL (solo lo que cambie)
+        #  UPDATE PARCIAL (solo lo que cambie)
         ser = DenunciaBorradorUpdateSerializer(data=request.data, partial=True)
         ser.is_valid(raise_exception=True)
         v = ser.validated_data
