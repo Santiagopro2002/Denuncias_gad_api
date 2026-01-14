@@ -22,3 +22,21 @@ urlpatterns = [
     path("borradores/<uuid:borrador_id>/",BorradoresUpdateDeleteView.as_view(),name="borrador_put_delete"),
     path("borradores/<uuid:borrador_id>/finalizar/",BorradoresFinalizarManualView.as_view(),name="borrador_finalizar"),
 ]
+
+from .views_borradores_media import (
+    BorradorSubirEvidenciaView,
+    BorradorSubirFirmaView,
+)
+
+urlpatterns += [
+    path(
+        "borradores/<uuid:borrador_id>/evidencias/",
+        BorradorSubirEvidenciaView.as_view(),
+        name="borrador_subir_evidencia",
+    ),
+    path(
+        "borradores/<uuid:borrador_id>/firma/",
+        BorradorSubirFirmaView.as_view(),
+        name="borrador_subir_firma",
+    ),
+]
