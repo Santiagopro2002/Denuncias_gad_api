@@ -3,7 +3,7 @@
 #   * Rearrange models' order
 #   * Make sure each model has one field with primary_key=True
 #   * Make sure each ForeignKey and OneToOneField has `on_delete` set to the desired behavior
-#   * Remove `managed = False` lines if you wish to allow Django to create, modify, and delete the table
+#   * Remove `managed = True` lines if you wish to allow Django to create, modify, and delete the table
 # Feel free to rename the models, but don't rename db_table values or field names.
 from django.db import models
 
@@ -20,20 +20,26 @@ class Auditoria(models.Model):
     updated_at = models.DateTimeField()
 
     class Meta:
-        managed = False
+        managed = True
         db_table = 'auditoria'
+
+    def __str__(self):
+        return f"Auditoría: {self.accion} - {self.usuario.correo if self.usuario else 'Sistema'} - {self.created_at}"
 
 
 class ChatConversaciones(models.Model):
     id = models.UUIDField(primary_key=True)
     ciudadano = models.ForeignKey('Ciudadanos', models.DO_NOTHING)
-    denuncia = models.ForeignKey('Denuncias', models.DO_NOTHING, blank=True, null=True)
+    denuncia = models.ForeignKey('Denuncias', models.DO_NOTHING, db_column='denuncia_id', to_field='id', blank=True, null=True)
     created_at = models.DateTimeField()
     updated_at = models.DateTimeField()
 
     class Meta:
-        managed = False
+        managed = True
         db_table = 'chat_conversaciones'
+
+    def __str__(self):
+        return f"Conversación: {self.ciudadano.nombres} {self.ciudadano.apellidos} - {self.created_at.date()}"
 
 
 class ChatMensajes(models.Model):
@@ -44,8 +50,11 @@ class ChatMensajes(models.Model):
     created_at = models.DateTimeField()
 
     class Meta:
-        managed = False
+        managed = True
         db_table = 'chat_mensajes'
+
+    def __str__(self):
+        return f"Mensaje {self.emisor}: {self.mensaje[:50]}... - {self.created_at}"
 
 
 class CiudadanoDocumentos(models.Model):
@@ -58,8 +67,11 @@ class CiudadanoDocumentos(models.Model):
     updated_at = models.DateTimeField()
 
     class Meta:
-        managed = False
+        managed = True
         db_table = 'ciudadano_documentos'
+
+    def __str__(self):
+        return f"Documento {self.tipo_documento}: {self.ciudadano.nombres} {self.ciudadano.apellidos}"
 
 
 class Ciudadanos(models.Model):
@@ -76,20 +88,26 @@ class Ciudadanos(models.Model):
     updated_at = models.DateTimeField()
 
     class Meta:
-        managed = False
+        managed = True
         db_table = 'ciudadanos'
+
+    def __str__(self):
+        return f"{self.nombres} {self.apellidos} - {self.cedula}"
 
 
 class DenunciaAsignaciones(models.Model):
     id = models.UUIDField(primary_key=True)
-    denuncia = models.ForeignKey('Denuncias', models.DO_NOTHING)
-    funcionario = models.ForeignKey('Funcionarios', models.DO_NOTHING)
+    denuncia = models.ForeignKey('Denuncias', models.DO_NOTHING, db_column='denuncia_id', to_field='id')
+    funcionario = models.ForeignKey('Funcionarios', models.DO_NOTHING, db_column='funcionario_id', to_field='id')
     asignado_en = models.DateTimeField()
     activo = models.BooleanField()
 
     class Meta:
-        managed = False
+        managed = True
         db_table = 'denuncia_asignaciones'
+
+    def __str__(self):
+        return f"Asignación: {self.denuncia.descripcion[:30]}... -> {self.funcionario.nombres} {self.funcionario.apellidos}"
 
 
 class DenunciaBorradores(models.Model):
@@ -102,13 +120,16 @@ class DenunciaBorradores(models.Model):
     updated_at = models.DateTimeField()
 
     class Meta:
-        managed = False
+        managed = True
         db_table = 'denuncia_borradores'
+
+    def __str__(self):
+        return f"Borrador: {self.ciudadano.nombres} {self.ciudadano.apellidos} - {'Listo' if self.listo_para_enviar else 'En proceso'}"
 
 
 class DenunciaEvidencias(models.Model):
     id = models.UUIDField(primary_key=True)
-    denuncia = models.ForeignKey('Denuncias', models.DO_NOTHING)
+    denuncia = models.ForeignKey('Denuncias', models.DO_NOTHING, db_column='denuncia_id', to_field='id')
     tipo = models.TextField()  # This field type is a guess.
     url_archivo = models.TextField()
     nombre_archivo = models.TextField(blank=True, null=True)
@@ -116,52 +137,64 @@ class DenunciaEvidencias(models.Model):
     updated_at = models.DateTimeField()
 
     class Meta:
-        managed = False
+        managed = True
         db_table = 'denuncia_evidencias'
+
+    def __str__(self):
+        return f"Evidencia {self.tipo}: {self.nombre_archivo or 'Sin nombre'} - Denuncia {self.denuncia.id}"
 
 
 class DenunciaFirmas(models.Model):
     id = models.UUIDField(primary_key=True)
-    denuncia = models.OneToOneField('Denuncias', models.DO_NOTHING)
+    denuncia = models.OneToOneField('Denuncias', models.DO_NOTHING, db_column='denuncia_id', to_field='id')
     firma_url = models.TextField(blank=True, null=True)
     firma_base64 = models.TextField(blank=True, null=True)
     created_at = models.DateTimeField()
     updated_at = models.DateTimeField()
 
     class Meta:
-        managed = False
+        managed = True
         db_table = 'denuncia_firmas'
+
+    def __str__(self):
+        return f"Firma Denuncia {self.denuncia.id} - {self.denuncia.ciudadano.nombres} {self.denuncia.ciudadano.apellidos}"
 
 
 class DenunciaHistorial(models.Model):
     id = models.UUIDField(primary_key=True)
-    denuncia = models.ForeignKey('Denuncias', models.DO_NOTHING)
+    denuncia = models.ForeignKey('Denuncias', models.DO_NOTHING, db_column='denuncia_id', to_field='id')
     estado_anterior = models.TextField(blank=True, null=True)  # This field type is a guess.
     estado_nuevo = models.TextField()  # This field type is a guess.
     comentario = models.TextField(blank=True, null=True)
-    cambiado_por_funcionario = models.ForeignKey('Funcionarios', models.DO_NOTHING, db_column='cambiado_por_funcionario', blank=True, null=True)
+    cambiado_por_funcionario = models.ForeignKey('Funcionarios', models.DO_NOTHING, db_column='cambiado_por_funcionario', to_field='id', blank=True, null=True)
     created_at = models.DateTimeField()
 
     class Meta:
-        managed = False
+        managed = True
         db_table = 'denuncia_historial'
+
+    def __str__(self):
+        return f"Historial: {self.estado_anterior} -> {self.estado_nuevo} - Denuncia {self.denuncia.id}"
 
 
 class DenunciaRespuestas(models.Model):
     id = models.UUIDField(primary_key=True)
-    denuncia = models.ForeignKey('Denuncias', models.DO_NOTHING)
-    funcionario = models.ForeignKey('Funcionarios', models.DO_NOTHING, blank=True, null=True)
+    denuncia = models.ForeignKey('Denuncias', models.DO_NOTHING, db_column='denuncia_id', to_field='id')
+    funcionario = models.ForeignKey('Funcionarios', models.DO_NOTHING, blank=True, null=True, db_column='funcionario_id', to_field='id')
     mensaje = models.TextField()
     created_at = models.DateTimeField()
     updated_at = models.DateTimeField()
 
     class Meta:
-        managed = False
+        managed = True
         db_table = 'denuncia_respuestas'
+
+    def __str__(self):
+        return f"Respuesta: {self.mensaje[:50]}... - {self.funcionario.nombres if self.funcionario else 'Sistema'} {self.funcionario.apellidos if self.funcionario else ''}"
 
 
 class Denuncias(models.Model):
-    id = models.UUIDField(primary_key=True)
+    id = models.BigAutoField(primary_key=True)
     ciudadano = models.ForeignKey(Ciudadanos, models.DO_NOTHING)
     tipo_denuncia = models.ForeignKey('TiposDenuncia', models.DO_NOTHING)
     descripcion = models.TextField()
@@ -171,14 +204,17 @@ class Denuncias(models.Model):
     direccion_texto = models.TextField(blank=True, null=True)
     origen = models.TextField()  # This field type is a guess.
     estado = models.TextField()  # This field type is a guess.
-    asignado_departamento = models.ForeignKey('Departamentos', models.DO_NOTHING, blank=True, null=True)
-    asignado_funcionario = models.ForeignKey('Funcionarios', models.DO_NOTHING, blank=True, null=True)
+    asignado_departamento = models.ForeignKey('Departamentos', models.DO_NOTHING, blank=True, null=True, db_column='asignado_departamento_id')
+    asignado_funcionario = models.ForeignKey('Funcionarios', models.DO_NOTHING, blank=True, null=True, db_column='asignado_funcionario_id', to_field='id')
     created_at = models.DateTimeField()
     updated_at = models.DateTimeField()
 
     class Meta:
-        managed = False
+        managed = True
         db_table = 'denuncias'
+
+    def __str__(self):
+        return f"Denuncia {self.id}: {self.descripcion[:50]}... - {self.ciudadano.nombres} {self.ciudadano.apellidos}"
 
 
 class Departamentos(models.Model):
@@ -189,8 +225,11 @@ class Departamentos(models.Model):
     updated_at = models.DateTimeField()
 
     class Meta:
-        managed = False
+        managed = True
         db_table = 'departamentos'
+
+    def __str__(self):
+        return f"{self.nombre} {'(Activo)' if self.activo else '(Inactivo)'}"
 
 
 class Faq(models.Model):
@@ -203,37 +242,49 @@ class Faq(models.Model):
     updated_at = models.DateTimeField()
 
     class Meta:
-        managed = False
+        managed = True
         db_table = 'faq'
+
+    def __str__(self):
+        return f"FAQ: {self.pregunta[:50]}... {'(Visible)' if self.visible else '(Oculto)'}"
 
 
 class FuncionarioRoles(models.Model):
     pk = models.CompositePrimaryKey('funcionario_id', 'rol_id')
-    funcionario = models.ForeignKey('Funcionarios', models.DO_NOTHING)
-    rol = models.ForeignKey('Roles', models.DO_NOTHING)
+    funcionario = models.ForeignKey('Funcionarios', models.DO_NOTHING, db_column='funcionario_id', to_field='id')
+    rol = models.ForeignKey('Roles', models.DO_NOTHING, db_column='rol_id')
     created_at = models.DateTimeField()
 
     class Meta:
-        managed = False
+        managed = True
         db_table = 'funcionario_roles'
         unique_together = (('funcionario', 'rol'),)
 
+    def __str__(self):
+        return f"Rol: {self.rol.nombre} - {self.funcionario.nombres} {self.funcionario.apellidos}"
+
 
 class Funcionarios(models.Model):
-    usuario = models.OneToOneField('Usuarios', models.DO_NOTHING, primary_key=True)
-    cedula = models.CharField(unique=True, max_length=15)
-    nombres = models.CharField(max_length=100)
-    apellidos = models.CharField(max_length=100)
-    telefono = models.CharField(max_length=20, blank=True, null=True)
-    departamento = models.ForeignKey(Departamentos, models.DO_NOTHING, blank=True, null=True)
-    cargo = models.CharField(max_length=100, blank=True, null=True)
-    activo = models.BooleanField()
-    created_at = models.DateTimeField()
-    updated_at = models.DateTimeField()
+    id = models.AutoField(primary_key=True, db_column='id')
+    cedula = models.CharField(unique=True, max_length=15, db_column='cedula')
+    nombres = models.CharField(max_length=100, db_column='nombres')
+    apellidos = models.CharField(max_length=100, db_column='apellidos')
+    telefono = models.CharField(max_length=20, blank=True, null=True, db_column='telefono')
+    departamento = models.ForeignKey(Departamentos, models.DO_NOTHING, blank=True, null=True, db_column='departamento_id')
+    cargo = models.CharField(max_length=100, blank=True, null=True, db_column='cargo')
+    activo = models.BooleanField(default=True, db_column='activo')
+    created_at = models.DateTimeField(db_column='created_at')
+    updated_at = models.DateTimeField(db_column='updated_at')
+    web_user = models.ForeignKey('auth.User', models.DO_NOTHING, blank=True, null=True, db_column='web_user_id')
 
     class Meta:
-        managed = False
+        managed = True
         db_table = 'funcionarios'
+
+    def __str__(self):
+        if self.web_user:
+            return f"{self.nombres} {self.apellidos} - {self.cargo or 'Sin cargo'} - {self.web_user.username}"
+        return f"{self.nombres} {self.apellidos} - {self.cargo or 'Sin cargo'}"
 
 
 class Notificaciones(models.Model):
@@ -247,8 +298,11 @@ class Notificaciones(models.Model):
     updated_at = models.DateTimeField()
 
     class Meta:
-        managed = False
+        managed = True
         db_table = 'notificaciones'
+
+    def __str__(self):
+        return f"Notificación: {self.titulo} - {self.usuario.correo} - {'Leído' if self.leido else 'No leído'}"
 
 
 class PasswordResetTokens(models.Model):
@@ -261,8 +315,11 @@ class PasswordResetTokens(models.Model):
     updated_at = models.DateTimeField()
 
     class Meta:
-        managed = False
+        managed = True
         db_table = 'password_reset_tokens'
+
+    def __str__(self):
+        return f"Token: {self.usuario.correo} - {'Usado' if self.usado else 'Válido'} - Expira: {self.expira_en}"
 
 
 class Roles(models.Model):
@@ -273,8 +330,11 @@ class Roles(models.Model):
     updated_at = models.DateTimeField()
 
     class Meta:
-        managed = False
+        managed = True
         db_table = 'roles'
+
+    def __str__(self):
+        return f"Rol: {self.nombre}"
 
 
 class TipoDenunciaDepartamento(models.Model):
@@ -284,8 +344,11 @@ class TipoDenunciaDepartamento(models.Model):
     updated_at = models.DateTimeField()
 
     class Meta:
-        managed = False
+        managed = True
         db_table = 'tipo_denuncia_departamento'
+
+    def __str__(self):
+        return f"{self.tipo_denuncia.nombre} - {self.departamento.nombre}"
 
 
 class TiposDenuncia(models.Model):
@@ -297,8 +360,11 @@ class TiposDenuncia(models.Model):
     updated_at = models.DateTimeField()
 
     class Meta:
-        managed = False
+        managed = True
         db_table = 'tipos_denuncia'
+
+    def __str__(self):
+        return f"{self.nombre} {'(Activo)' if self.activo else '(Inactivo)'}"
 
 
 class Usuarios(models.Model):
@@ -312,5 +378,8 @@ class Usuarios(models.Model):
     updated_at = models.DateTimeField()
 
     class Meta:
-        managed = False
+        managed = True
         db_table = 'usuarios'
+
+    def __str__(self):
+        return f"{self.correo} ({self.tipo}) - {'Activo' if self.activo else 'Inactivo'}"
