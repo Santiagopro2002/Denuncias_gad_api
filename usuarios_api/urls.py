@@ -6,6 +6,8 @@ from .views import (
 )
 from .views_password_reset import (ResetEnviarCodigoView,ResetVerificarCodigoView,ResetCambiarPasswordView)
 from .views_perfil import PerfilView
+from .views_password_change import PasswordChangeView
+
 urlpatterns = [
     path("login/", LoginView.as_view()),
     path("register/paso1/", RegisterPaso1View.as_view()),
@@ -18,4 +20,6 @@ urlpatterns = [
     path("password-reset/paso2/verificar-codigo/", ResetVerificarCodigoView.as_view()),
     path("password-reset/paso3/cambiar-password/", ResetCambiarPasswordView.as_view()),
     path("perfil/", PerfilView.as_view(), name="perfil"),
+    path("password/change/", PasswordChangeView.as_view()),
+
 ]
