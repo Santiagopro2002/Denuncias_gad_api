@@ -1,0 +1,146 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="container-fluid mt-4">
+    <div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
+        <h1 class="h2">Gestión de Menús</h1>
+        <div class="btn-toolbar mb-2 mb-md-0">
+            <a href="{% url 'web:menu_create' %}" class="btn btn-sm btn-primary">
+                <i class="bi bi-plus-lg me-1"></i>Nuevo Menú
+            </a>
+        </div>
+    </div>
+
+    <div class="alert alert-info py-2 small">
+        <i class="bi bi-info-circle me-1"></i>
+        Esta sección es visible únicamente para superusuarios. Permite configurar la navegación del sistema.
+    </div>
+
+    <div class="card border-0 shadow-sm">
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th class="border-0">Nombre</th>
+                            <th class="border-0">URL</th>
+                            <th class="border-0 text-center">Icono</th>
+                            <th class="border-0 text-center">Orden</th>
+                            <th class="border-0">Padre</th>
+                            <th class="border-0 text-center">Permisos</th>
+                            <th class="border-0 text-end">Acciones</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for menu in menus %}
+                        <tr>
+                            <td class="align-middle fw-medium">
+                                {% if menu.padre %}
+                                    <span class="text-muted ms-3"><i class="bi bi-arrow-return-right me-1"></i></span>
+                                {% endif %}
+                                {{ menu.nombre }}
+                            </td>
+                            <td class="align-middle text-muted small">{{ menu.url }}</td>
+                            <td class="align-middle text-center">
+                                {% if menu.icono %}
+                                    <i class="{{ menu.icono }}"></i>
+                                {% else %}
+                                    -
+                                {% endif %}
+                            </td>
+                            <td class="align-middle text-center">{{ menu.orden }}</td>
+                            <td class="align-middle text-muted small">
+                                {% if menu.padre %}
+                                    {{ menu.padre.nombre }}
+                                {% else %}
+                                    <span class="badge bg-light text-dark">Principal</span>
+                                {% endif %}
+                            </td>
+                            <td class="align-middle text-center">
+                                {% if menu.permisos.count > 0 %}
+                                    <span class="badge bg-info text-dark" title="{{ menu.permisos.all|join:', ' }}">
+                                        {{ menu.permisos.count }} roles
+                                    </span>
+                                {% else %}
+                                    <span class="badge bg-secondary">Todos</span>
+                                {% endif %}
+                            </td>
+                            <td class="align-middle text-end">
+                                <div class="btn-group btn-group-sm">
+                                    <a href="{% url 'web:menu_update' menu.pk %}" class="btn btn-outline-primary" title="Editar">
+                                        <i class="bi bi-pencil"></i>
+                                    </a>
+                                    <a href="{% url 'web:menu_delete' menu.pk %}" class="btn btn-outline-danger" title="Eliminar">
+                                        <i class="bi bi-trash"></i>
+                                    </a>
+                                </div>
+                            </td>
+                        </tr>
+                        {% empty %}
+                        <tr>
+                            <td colspan="7" class="text-center py-4 text-muted">
+                                <i class="bi bi-list-nested display-4 d-block mb-3"></i>
+                                No hay menús configurados
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        
+        <!-- Paginación -->
+        {% if is_paginated %}
+        <div class="card-footer bg-white border-top-0">
+            <div class="d-flex justify-content-between align-items-center">
+                <div class="text-muted small">
+                    Mostrando {{ page_obj.start_index }} - {{ page_obj.end_index }} de {{ paginator.count }} registros
+                </div>
+                <nav aria-label="Navegación de páginas">
+                    <ul class="pagination pagination-sm mb-0">
+                        {% if page_obj.has_previous %}
+                        <li class="page-item">
+                            <a class="page-link" href="?page=1">&laquo; Primera</a>
+                        </li>
+                        <li class="page-item">
+                            <a class="page-link" href="?page={{ page_obj.previous_page_number }}">Anterior</a>
+                        </li>
+                        {% else %}
+                        <li class="page-item disabled">
+                            <span class="page-link">&laquo; Primera</span>
+                        </li>
+                        <li class="page-item disabled">
+                            <span class="page-link">Anterior</span>
+                        </li>
+                        {% endif %}
+                        
+                        {% for num in page_obj.paginator.page_range %}
+                            {% if page_obj.number == num %}
+                            <li class="page-item active"><span class="page-link">{{ num }}</span></li>
+                            {% elif num > page_obj.number|add:'-3' and num < page_obj.number|add:'3' %}
+                            <li class="page-item"><a class="page-link" href="?page={{ num }}">{{ num }}</a></li>
+                            {% endif %}
+                        {% endfor %}
+                        
+                        {% if page_obj.has_next %}
+                        <li class="page-item">
+                            <a class="page-link" href="?page={{ page_obj.next_page_number }}">Siguiente</a>
+                        </li>
+                        <li class="page-item">
+                            <a class="page-link" href="?page={{ paginator.num_pages }}">Última &raquo;</a>
+                        </li>
+                        {% else %}
+                        <li class="page-item disabled">
+                            <span class="page-link">Siguiente</span>
+                        </li>
+                        <li class="page-item disabled">
+                            <span class="page-link">Última &raquo;</span>
+                        </li>
+                        {% endif %}
+                    </ul>
+                </nav>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

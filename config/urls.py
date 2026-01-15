@@ -19,16 +19,26 @@ from django.urls import path, include
 
 from django.conf import settings
 from django.conf.urls.static import static
+from django.views.generic import RedirectView
+
+# Handlers de error personalizados
+handler403 = 'web.views.permission_denied_view'
+handler404 = 'web.views.page_not_found_view'
+handler500 = 'web.views.server_error_view'
 
 urlpatterns = [
     path('admin/', admin.site.urls),
+    path('select2/', include('django_select2.urls')),
     path("api/auth/", include("usuarios_api.urls")),
     path("api/catalogos/", include("catalogos_api.urls")),
     path("api/denuncias/", include("denuncias_api.urls")),
     path("api/faq/", include("faq_api.urls")),
     path("api/chatbot/", include("chatbot_api.urls")),
+    path("web/", include("web.urls")),
+    path('', RedirectView.as_view(url='/web/', permanent=True)),
 
 ]
 
-if settings.DEBUG:
-    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
+# Servir archivos estáticos y media (desarrollo y testing con DEBUG=False)
+urlpatterns += static(settings.STATIC_URL, document_root=settings.STATIC_ROOT)
+urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

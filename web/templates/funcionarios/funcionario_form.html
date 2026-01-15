@@ -1,0 +1,138 @@
+{% extends 'base.html' %}
+{% block content %}
+{{ form.media }}
+<div class="container-fluid mt-4">
+    <div class="row justify-content-center">
+        <div class="col-lg-6">
+            <div class="card shadow-sm">
+                <div class="card-header bg-primary text-white">
+                    <h5 class="card-title mb-0">
+                        <i class="bi bi-{% if object %}pencil{% else %}plus-circle{% endif %} me-2"></i>
+                        {% if object %}Editar{% else %}Crear{% endif %} Funcionario
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <form method="post" action=".">
+                        {% csrf_token %}
+
+                        {% if form.non_field_errors %}
+                        <div class="alert alert-danger" role="alert">
+                            <i class="bi bi-exclamation-triangle me-2"></i>
+                            {% for error in form.non_field_errors %}
+                                {{ error }}
+                            {% endfor %}
+                        </div>
+                        {% endif %}
+
+                        <div class="mb-3">
+                            <label for="{{ form.web_user.id_for_label }}" class="form-label">
+                                <i class="bi bi-person-circle me-1"></i>Usuario Web
+                            </label>
+                            {{ form.web_user }}
+                            {% if form.web_user.errors %}
+                                <div class="text-danger small">{{ form.web_user.errors.0 }}</div>
+                            {% endif %}
+                            <div class="form-text">Seleccione el usuario del sistema para este funcionario</div>
+                        </div>
+
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label for="{{ form.cedula.id_for_label }}" class="form-label">
+                                    <i class="bi bi-credit-card me-1"></i>Cédula
+                                </label>
+                                {{ form.cedula }}
+                                {% if form.cedula.errors %}
+                                    <div class="text-danger small">{{ form.cedula.errors.0 }}</div>
+                                {% endif %}
+                                <div class="form-text">Número de cédula del funcionario</div>
+                            </div>
+
+                            <div class="col-md-6 mb-3">
+                                <label for="{{ form.telefono.id_for_label }}" class="form-label">
+                                    <i class="bi bi-telephone me-1"></i>Teléfono
+                                </label>
+                                {{ form.telefono }}
+                                {% if form.telefono.errors %}
+                                    <div class="text-danger small">{{ form.telefono.errors.0 }}</div>
+                                {% endif %}
+                                <div class="form-text">Número de teléfono (opcional)</div>
+                            </div>
+                        </div>
+
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label for="{{ form.nombres.id_for_label }}" class="form-label">
+                                    <i class="bi bi-person me-1"></i>Nombres
+                                </label>
+                                {{ form.nombres }}
+                                {% if form.nombres.errors %}
+                                    <div class="text-danger small">{{ form.nombres.errors.0 }}</div>
+                                {% endif %}
+                                <div class="form-text">Nombres completos del funcionario</div>
+                            </div>
+
+                            <div class="col-md-6 mb-3">
+                                <label for="{{ form.apellidos.id_for_label }}" class="form-label">
+                                    <i class="bi bi-person me-1"></i>Apellidos
+                                </label>
+                                {{ form.apellidos }}
+                                {% if form.apellidos.errors %}
+                                    <div class="text-danger small">{{ form.apellidos.errors.0 }}</div>
+                                {% endif %}
+                                <div class="form-text">Apellidos completos del funcionario</div>
+                            </div>
+                        </div>
+
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label for="{{ form.departamento.id_for_label }}" class="form-label">
+                                    <i class="bi bi-building me-1"></i>Departamento
+                                </label>
+                                {{ form.departamento }}
+                                {% if form.departamento.errors %}
+                                    <div class="text-danger small">{{ form.departamento.errors.0 }}</div>
+                                {% endif %}
+                                <div class="form-text">Departamento al que pertenece el funcionario</div>
+                            </div>
+
+                            <div class="col-md-6 mb-3">
+                                <label for="{{ form.cargo.id_for_label }}" class="form-label">
+                                    <i class="bi bi-briefcase me-1"></i>Cargo
+                                </label>
+                                {{ form.cargo }}
+                                {% if form.cargo.errors %}
+                                    <div class="text-danger small">{{ form.cargo.errors.0 }}</div>
+                                {% endif %}
+                                <div class="form-text">Cargo o puesto del funcionario</div>
+                            </div>
+                        </div>
+
+                        <div class="mb-3">
+                            <div class="form-check">
+                                {{ form.activo }}
+                                <label for="{{ form.activo.id_for_label }}" class="form-check-label">
+                                    <i class="bi bi-check-circle me-1"></i>Funcionario Activo
+                                </label>
+                            </div>
+                            {% if form.activo.errors %}
+                                <div class="text-danger small">{{ form.activo.errors.0 }}</div>
+                            {% endif %}
+                            <div class="form-text">Marque esta casilla si el funcionario está activo</div>
+                        </div>
+
+                        <div class="d-grid gap-2 d-md-flex justify-content-md-end">
+                            <a href="{% url 'web:funcionario_list' %}" class="btn btn-outline-secondary me-md-2">
+                                <i class="bi bi-arrow-left me-1"></i>Cancelar
+                            </a>
+                            <button type="submit" class="btn btn-primary">
+                                <i class="bi bi-check-circle me-1"></i>
+                                {% if object %}Actualizar{% else %}Crear{% endif %} Funcionario
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

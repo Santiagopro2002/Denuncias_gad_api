@@ -51,12 +51,13 @@ INSTALLED_APPS = [
     "rest_framework",
     "corsheaders",
     "django_extensions",
+    "django_select2",
     #rutas
     "usuarios_api",
     "denuncias_api",
     "catalogos_api",
-    "web_funcionarios",
     "db",
+    "web",
 ]
 
 MIDDLEWARE = [
@@ -82,6 +83,7 @@ TEMPLATES = [
                 'django.template.context_processors.request',
                 'django.contrib.auth.context_processors.auth',
                 'django.contrib.messages.context_processors.messages',
+                'web.context_processors.menu_context',
             ],
         },
     },
@@ -96,11 +98,11 @@ WSGI_APPLICATION = 'config.wsgi.application'
 DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.postgresql",
-        "NAME": "denunicas_bdd",
-        "USER": "postgres",
-        "PASSWORD": "San+Ale+2424+",
-        "HOST": "127.0.0.1",
-        "PORT": "5432",
+        "NAME": os.getenv("DB_NAME"),
+        "USER": os.getenv("DB_USER"),
+        "PASSWORD": os.getenv("DB_PASSWORD"),
+        "HOST": os.getenv("DB_HOST", "localhost"),
+        "PORT": os.getenv("DB_PORT", "5432"),
     }
 }
 CORS_ALLOW_ALL_ORIGINS = True
@@ -140,12 +142,23 @@ USE_TZ = True
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/5.2/howto/static-files/
 
-STATIC_URL = 'static/'
+STATIC_URL = '/static/'
+STATICFILES_DIRS = [BASE_DIR / "static"]
+STATIC_ROOT = BASE_DIR / "staticfiles"
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+
+# Configuración de autenticación
+LOGIN_REDIRECT_URL = 'web:home'
+LOGIN_URL = 'web:login'
+
+# Manejadores de errores personalizados
+HANDLER403 = 'web.views.permission_denied_view'
+HANDLER404 = 'web.views.page_not_found_view'
+HANDLER500 = 'web.views.server_error_view'
 
 # drf config
 REST_FRAMEWORK = {
@@ -166,8 +179,20 @@ SIMPLE_JWT = {
 MEDIA_URL = "/media/"
 MEDIA_ROOT = BASE_DIR / "media"
 
-# no cree migraciones
-MIGRATION_MODULES = {
-    "db": None,
+# Configuración de caché para django-select2 (sin Redis)
+CACHES = {
+    "default": {
+        "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+        "LOCATION": "unique-snowflake",
+    }
 }
+
+# Configuración de django-select2
+SELECT2_CACHE_BACKEND = "default"
+
+# no cree migraciones
+"""MIGRATION_MODULES = {
+    "db": None,
+}"""
+
 
