@@ -33,7 +33,9 @@ SECRET_KEY = 'django-insecure-wy$n=-=p&=y2ic4!j2tpvis)5hl0l*3$1o5q7od64#rz-l&g2+
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = ['localhost', '127.0.0.1']
+
+#ruta
+ALLOWED_HOSTS = ["127.0.0.1", "localhost", "192.168.100.46"]
 
 
 # Application definition
@@ -166,8 +168,11 @@ REST_FRAMEWORK = {
     
     ),
 }
+from datetime import timedelta
 SIMPLE_JWT = {
     "USER_ID_CLAIM": "uid",
+    "ACCESS_TOKEN_LIFETIME": timedelta(hours=6),
+    "REFRESH_TOKEN_LIFETIME": timedelta(days=7),
 }
 
 #subir envidencias

@@ -181,7 +181,7 @@ class RegisterVerificarCodigoView(APIView):
         borrador.correo_verificado = True
         borrador.save()
 
-        return Response({"detail": "Correo verificado ✅"}, status=200)
+        return Response({"detail": "Correo verificado "}, status=200)
 
 
 class RegisterFechaView(APIView):
