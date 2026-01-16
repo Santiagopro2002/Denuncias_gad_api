@@ -63,7 +63,7 @@
             <div class="card shadow-sm">
                 <div class="card-body p-0">
                     <div class="table-responsive">
-                        <table class="table table-hover table-striped mb-0">
+                        <table class="table table-hover table-striped mb-0 {% if denuncias %}datatable{% endif %}">
                             <thead class="table-dark">
                                 <tr>
                                     <th>Fecha</th>
@@ -105,10 +105,11 @@
                                     </td>
                                     <td class="text-center align-middle">
                                         <div class="btn-group" role="group">
-                                            {% if denuncia.estado != 'resuelto' %}
                                             <a href="{% url 'web:denuncia_detail' denuncia.pk %}" class="btn btn-sm btn-outline-primary" title="Ver detalles completo">
                                                 <i class="bi bi-eye"></i>
                                             </a>
+                                            {% if denuncia.estado != 'resuelto' %}
+                                            
                                             <a href="{% url 'web:denuncia_update' denuncia.pk %}" class="btn btn-sm btn-outline-warning" title="Gestionar">
                                                 <i class="bi bi-pencil-square"></i>
                                             </a>

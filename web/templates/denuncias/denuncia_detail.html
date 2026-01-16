@@ -2,53 +2,74 @@
 {% block content %}
 <div class="container-fluid mt-4">
     <!-- Header y acciones principales -->
-    <div class="d-flex justify-content-between align-items-center mb-4">
-        <div>
-            <h1 class="h3 mb-0 text-gray-800">Denuncia #<small class="text-muted">{{ denuncia.id|truncatechars:8 }}</small></h1>
-            <p class="text-muted mb-0">Creado el {{ denuncia.created_at|date:"d de F, Y" }} a las {{ denuncia.created_at|date:"H:i" }}</p>
-        </div>
-        <div>
-            <a href="{% url 'web:denuncia_list' %}" class="btn btn-outline-secondary me-2">
-                <i class="bi bi-arrow-left me-1"></i>Volver
-            </a>
-            {% if denuncia.estado != 'resuelto' %}
-            <a href="{% url 'web:denuncia_update' denuncia.pk %}" class="btn btn-primary">
-                <i class="bi bi-pencil-square me-1"></i>Gestionar Denuncia
-            </a>
-            {% endif %}
-        </div>
-    </div>
+    <div class="card shadow-sm mb-4">
+    <div class="card-body">
 
-    <!-- Estado Actual -->
-    <div class="row mb-4">
-        <div class="col-12">
-            <div class="card border-left-{{ denuncia.estado|yesno:'primary,success' }} shadow h-100 py-2">
-                <div class="card-body">
-                    <div class="row no-gutters align-items-center">
-                        <div class="col mr-2">
-                            <div class="text-xs font-weight-bold text-uppercase mb-1">Estado Actual</div>
-                            <div class="h5 mb-0 font-weight-bold text-gray-800">
-                                {% if denuncia.estado == 'pendiente' %}
-                                    <span class="badge bg-warning text-dark fs-5">Pendiente</span>
-                                {% elif denuncia.estado == 'en_proceso' %}
-                                    <span class="badge bg-primary fs-5">En Proceso</span>
-                                {% elif denuncia.estado == 'resuelto' %}
-                                    <span class="badge bg-success fs-5">Resuelto</span>
-                                {% elif denuncia.estado == 'rechazado' %}
-                                    <span class="badge bg-danger fs-5">Rechazado</span>
-                                {% else %}
-                                    <span class="badge bg-secondary fs-5">{{ denuncia.estado }}</span>
-                                {% endif %}
-                            </div>
-                        </div>
-                        <div class="col-auto">
-                            <i class="bi bi-clipboard-data fa-2x text-gray-300"></i>
-                        </div>
-                    </div>
+        <div class="row align-items-center g-3">
+
+            <!-- Info -->
+            <div class="col-lg-8">
+                <div class="d-flex align-items-center gap-2">
+                    <h1 class="h4 mb-0 text-gray-800">
+                        Denuncia
+                        <span class="text-muted">#{{ denuncia.id|truncatechars:8 }}</span>
+                    </h1>
+
+                    <span class="badge 
+                        {% if denuncia.estado == 'resuelto' %}
+                            bg-success
+                        {% else %}
+                            bg-warning text-dark
+                        {% endif %}
+                    ">
+                        {{ denuncia.estado|title }}
+                    </span>
                 </div>
+
+                <small class="text-muted d-block mt-1">
+                    Creado el {{ denuncia.created_at|date:"d \d\e F, Y" }}
+                    a las {{ denuncia.created_at|date:"H:i" }}
+                </small>
             </div>
+
+            <!-- Acciones -->
+            <div class="col-lg-4 text-lg-end">
+                <div class="btn-group" role="group">
+
+                    <a href="{% url 'web:denuncia_list' %}" class="btn btn-outline-secondary">
+                        <i class="bi bi-arrow-left me-1"></i>
+                        Volver
+                    </a>
+
+                    {% if denuncia.estado != 'resuelto' %}
+                        <a href="{% url 'web:denuncia_update' denuncia.pk %}" class="btn btn-primary">
+                            <i class="bi bi-pencil-square me-1"></i>
+                            Gestionar
+                        </a>
+                    {% endif %}
+                </div>
+
+                {% if denuncia.estado != 'resuelto' %}
+                    <form method="post"
+                          action="{% url 'web:resolver_denuncia' denuncia.pk %}"
+                          class="d-inline-block ms-2">
+                        {% csrf_token %}
+                        <button type="submit" class="btn btn-success">
+                            <i class="bi bi-check-circle me-1"></i>
+                            Resolver
+                        </button>
+                    </form>
+                {% endif %}
+            </div>
+
         </div>
+
     </div>
+    
+</div>
+
+
+    
 
     <div class="row">
         <!-- Columna Izquierda: Información Principal -->
@@ -315,14 +336,23 @@
 
             <!-- Chat / Respuestas -->
             <div class="card shadow mb-4">
-                <div class="card-header py-3 bg-white d-flex justify-content-between align-items-center">
-                    <h6 class="m-0 font-weight-bold text-primary"><i class="bi bi-chat-dots me-2"></i>Comunicación</h6>
+                <div class="card-header py-3 bg-white d-flex flex-wrap gap-2 align-items-center justify-content-between">
+                    <h6 class="m-0 font-weight-bold text-primary d-flex align-items-center">
+                        <i class="bi bi-chat-dots me-2"></i>
+                        Comunicación
+                    </h6>
                     {% if denuncia.estado != 'resuelto' %}
-                    <button type="button" class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#respuestaModal">
-                        <i class="bi bi-plus-lg"></i> Nueva respuesta
-                    </button>
+                    <div class="d-flex flex-wrap gap-2">
+                        <button type="button" class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#respuestaModal">
+                            <i class="bi bi-plus-lg"></i> Nueva respuesta
+                        </button>
+                        <button type="button" class="btn btn-sm btn-primary" id="btnRespuestaIA">
+                            <i class="bi bi-stars"></i> Generar respuesta con IA
+                        </button>
+                    </div>
                     {% endif %}
                 </div>
+                
                 <div class="card-body bg-light" style="max-height: 400px; overflow-y: auto;">
                     {% for respuesta in respuestas %}
                     <div class="d-flex mb-3 {% if respuesta.funcionario %}flex-row-reverse{% endif %}">
@@ -370,5 +400,59 @@
             </div>
         </div>
     </div>
-</div>
-{% endblock %}
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const iaBtn = document.getElementById('btnRespuestaIA');
+            const textarea = document.getElementById('respuestaMensaje');
+            const modalEl = document.getElementById('respuestaModal');
+            const modal = modalEl ? bootstrap.Modal.getOrCreateInstance(modalEl) : null;
+
+            if (!iaBtn || !textarea || !modal) return;
+
+            iaBtn.addEventListener('click', function() {
+                iaBtn.disabled = true;
+                iaBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span> Generando...';
+
+                fetch(
+                    "{% url 'web:generate_llm_response' denuncia.id %}",
+                    {
+                        method: 'POST',
+                        headers: {
+                            'X-Requested-With': 'XMLHttpRequest',
+                            'Content-Type': 'application/json',
+                            'X-CSRFToken': '{{ csrf_token }}',
+                        },
+                    }
+                )
+                    .then(async (resp) => {
+                        const ct = resp.headers.get('Content-Type') || '';
+                        if (ct.includes('application/json')) {
+                            return resp.json();
+                        }
+                        const text = await resp.text();
+                        return { response: text };
+                    })
+                    .then(data => {
+                        if (data && data.response) {
+                            textarea.value = data.response;
+                        } else if (data && data.message) {
+                            textarea.value = data.message;
+                        } else {
+                            textarea.value = 'No se pudo generar la respuesta.';
+                        }
+                        modal.show();
+                    })
+                    .catch(err => {
+                        console.error('Error generating LLM response:', err);
+                        textarea.value = 'Ocurrió un error al generar la respuesta.';
+                        modal.show();
+                    })
+                    .finally(() => {
+                        iaBtn.disabled = false;
+                        iaBtn.innerHTML = '<i class="bi bi-stars"></i> Generar respuesta con IA';
+                    });
+            });
+        });
+    </script>
+            {% endblock %}

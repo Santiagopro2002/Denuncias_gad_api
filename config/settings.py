@@ -50,6 +50,7 @@ INSTALLED_APPS = [
     "corsheaders",
     "django_extensions",
     "django_select2",
+    'chartkick.django',
     #rutas
     "usuarios_api",
     "denuncias_api",

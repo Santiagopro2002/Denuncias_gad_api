@@ -37,6 +37,30 @@
 
                         <div class="row">
                             <div class="col-md-6 mb-3">
+                                <label for="{{ form.nombres.id_for_label }}" class="form-label">
+                                    <i class="bi bi-person me-1"></i>Nombres
+                                </label>
+                                {{ form.nombres }}
+                                {% if form.nombres.errors %}
+                                    <div class="text-danger small">{{ form.nombres.errors.0 }}</div>
+                                {% endif %}
+                                <div class="form-text">Nombres completos del funcionario</div>
+                            </div>
+
+                            <div class="col-md-6 mb-3">
+                                <label for="{{ form.apellidos.id_for_label }}" class="form-label">
+                                    <i class="bi bi-person me-1"></i>Apellidos
+                                </label>
+                                {{ form.apellidos }}
+                                {% if form.apellidos.errors %}
+                                    <div class="text-danger small">{{ form.apellidos.errors.0 }}</div>
+                                {% endif %}
+                                <div class="form-text">Apellidos completos del funcionario</div>
+                            </div>
+                        </div>
+
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
                                 <label for="{{ form.cedula.id_for_label }}" class="form-label">
                                     <i class="bi bi-credit-card me-1"></i>Cédula
                                 </label>
@@ -59,29 +83,7 @@
                             </div>
                         </div>
 
-                        <div class="row">
-                            <div class="col-md-6 mb-3">
-                                <label for="{{ form.nombres.id_for_label }}" class="form-label">
-                                    <i class="bi bi-person me-1"></i>Nombres
-                                </label>
-                                {{ form.nombres }}
-                                {% if form.nombres.errors %}
-                                    <div class="text-danger small">{{ form.nombres.errors.0 }}</div>
-                                {% endif %}
-                                <div class="form-text">Nombres completos del funcionario</div>
-                            </div>
-
-                            <div class="col-md-6 mb-3">
-                                <label for="{{ form.apellidos.id_for_label }}" class="form-label">
-                                    <i class="bi bi-person me-1"></i>Apellidos
-                                </label>
-                                {{ form.apellidos }}
-                                {% if form.apellidos.errors %}
-                                    <div class="text-danger small">{{ form.apellidos.errors.0 }}</div>
-                                {% endif %}
-                                <div class="form-text">Apellidos completos del funcionario</div>
-                            </div>
-                        </div>
+                        
 
                         <div class="row">
                             <div class="col-md-6 mb-3">
@@ -135,4 +137,52 @@
         </div>
     </div>
 </div>
+
+<script>
+$(document).ready(function() {
+    const $webUserSelect = $('#id_web_user');
+    const $nombresInput = $('#id_nombres');
+    const $apellidosInput = $('#id_apellidos');
+
+    const urlBase = "{% url 'web:get_user_data' 0 %}";
+    
+    // Función para cargar datos
+    function loadUserData() {
+        const userId = $webUserSelect.val();
+        if (!userId) return;
+        
+        console.log("Cargando datos para usuario:", userId);
+        const url = urlBase.replace('/0/', '/' + userId + '/');
+
+        $.ajax({
+            url: url,
+            type: 'GET',
+            dataType: 'json',
+            success: function(data) {
+                if (data.success) {
+                    $nombresInput.val(data.first_name || '');
+                    $apellidosInput.val(data.last_name || '');
+                } else {
+                    console.error("Error del servidor:", data.error);
+                }
+            },
+            error: function(xhr, status, error) {
+                console.error('Error AJAX:', error);
+            }
+        });
+    }
+
+    $webUserSelect.on('change select2:select', function(e) {
+        // Evitamos doble ejecución si ambos eventos se disparan
+        if (e.type === 'select2:select' || e.type === 'change') {
+            loadUserData();
+        }
+    });
+
+    // Validar si ya hay un usuario seleccionado al cargar (ej: editar) y campos vacíos
+    if ($webUserSelect.val() && !$nombresInput.val()) {
+        loadUserData();
+    }
+});
+</script>
 {% endblock %}

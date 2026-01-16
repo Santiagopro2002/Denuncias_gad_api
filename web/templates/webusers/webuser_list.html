@@ -23,6 +23,7 @@
                                     <th>Nombre</th>
                                     <th>Apellido</th>
                                     <th>Activo</th>
+                                    <th>Funcionario</th>
                                     <th class="text-center">Acciones</th>
                                 </tr>
                             </thead>
@@ -40,6 +41,18 @@
                                         {% else %}
                                             <span class="badge bg-danger">Inactivo</span>
                                         {% endif %}
+                                    </td>
+                                    <td>
+                                        {% with func=user.funcionarios_set.first %}
+                                            {% if func %}
+                                                {{ func.nombres }} {{ func.apellidos }}
+                                                {% if func.cargo %}
+                                                    <br><small class="text-muted">{{ func.cargo }}</small>
+                                                {% endif %}
+                                            {% else %}
+                                                <span class="text-muted fst-italic">No asignado</span>
+                                            {% endif %}
+                                        {% endwith %}
                                     </td>
                                     <td class="text-center">
                                         <div class="btn-group" role="group">
