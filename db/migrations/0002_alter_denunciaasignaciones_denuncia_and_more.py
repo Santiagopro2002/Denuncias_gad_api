@@ -52,6 +52,11 @@ class Migration(migrations.Migration):
             field=models.ForeignKey(blank=True, db_column='asignado_funcionario_id', null=True, on_delete=django.db.models.deletion.DO_NOTHING, to='db.funcionarios'),
         ),
         migrations.AlterField(
+            model_name='denuncias',
+            name='id',
+            field=models.BigAutoField(primary_key=True, serialize=False),
+        ),
+        migrations.AlterField(
             model_name='funcionarioroles',
             name='funcionario',
             field=models.ForeignKey(db_column='funcionario_id', on_delete=django.db.models.deletion.DO_NOTHING, to='db.funcionarios'),
