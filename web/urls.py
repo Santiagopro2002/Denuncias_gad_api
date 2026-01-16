@@ -13,6 +13,11 @@ urlpatterns = [
     path('dashboard/', dashboard_view, name='dashboard'),
     path('logout/', LogoutView.as_view(next_page='web:login'), name='logout'),
     path('login/', CustomLoginView.as_view(), name='login'),
+    
+    # AJAX endpoints
+    path('api/user-data/<int:user_id>/', get_user_data_ajax, name='get_user_data'),
+    path('api/generate-llm-response/<int:denuncia_id>/',llm_response , name='generate_llm_response'),
+    path('resolver-denuncia/<int:denuncia_id>/', resolver_denuncia, name='resolver_denuncia'),
 
     path('funcionarios/', FuncionariosListView.as_view(), name='funcionario_list'),
     path('funcionarios/create/', FuncionariosCreateView.as_view(), name='funcionario_create'),

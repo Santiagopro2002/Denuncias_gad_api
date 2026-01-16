@@ -1,4 +1,5 @@
 {% extends 'base.html' %}
+{% load permission_filters %}
 {% block content %}
 <div class="container-fluid mt-4">
     <div class="row justify-content-center">
@@ -38,7 +39,7 @@
                                 <i class="bi bi-key me-1"></i>Permisos Asignados
                             </label>
 
-                            {% with selected_ids=form.permissions.value %}
+                            {% with selected_ids=selected_ids %}
                             <div class="d-flex flex-wrap gap-2 mb-2">
                                 <button type="button" class="btn btn-outline-primary btn-sm" data-bs-toggle="modal" data-bs-target="#permisosModal">
                                     <i class="bi bi-grid me-1"></i>Seleccionar por modelo
@@ -52,7 +53,7 @@
                             <div id="permisosSeleccionados" class="mb-2">
                                 {% for perm in form.permissions.field.queryset %}
                                     {% if perm.id|stringformat:"s" in selected_ids %}
-                                        <span class="badge bg-info text-dark me-1 mb-1" data-perm-id="{{ perm.id }}">{{ perm.name }}</span>
+                                        <span class="badge bg-info text-dark me-1 mb-1" data-perm-id="{{ perm.id }}">{{ perm|translate_permission }}</span>
                                     {% endif %}
                                 {% empty %}
                                 {% endfor %}
@@ -94,7 +95,7 @@
                                                                 <div class="col">
                                                                     <div class="form-check">
                                                                         <input class="form-check-input perm-checkbox" type="checkbox" value="{{ perm.id }}" id="perm-{{ perm.id }}" name="permissions" {% if perm.id|stringformat:"s" in selected_ids %}checked{% endif %}>
-                                                                        <label class="form-check-label" for="perm-{{ perm.id }}">{{ perm.name }}</label>
+                                                                        <label class="form-check-label" for="perm-{{ perm.id }}">{{ perm|translate_permission }}</label>
                                                                     </div>
                                                                 </div>
                                                                 {% endfor %}

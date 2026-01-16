@@ -1,13 +1,71 @@
 {% extends 'base.html' %}
 {% block content %}
+
 <div class="container-fluid mt-5 mb-5">
     <!-- Encabezado del Dashboard -->
     <div class="row mb-5">
         <div class="col-12">
-            <h1 class="display-5 fw-bold mb-2">
-                <i class="bi bi-graph-up text-primary me-2"></i>Panel de Control
-            </h1>
+            <h3 class="fw-bold mb-2">
+                <i class="bi bi-graph-up text-primary me-2"></i>Dashboard
+            </h3>
             <p class="text-muted">Resumen de estadísticas del sistema de denuncias</p>
+        </div>
+    </div>
+
+
+    <!-- Sección de Gráficos KPI -->
+    <div class="row mb-4">
+        <div class="col-md-6 mb-4">
+            <div class="card border-0 shadow-sm h-100">
+                <div class="card-body">
+                    {{ chart_estado_denuncias }}
+                </div>
+            </div>
+        </div>
+        <div class="col-md-6 mb-4">
+            <div class="card border-0 shadow-sm h-100">
+                <div class="card-body">
+                    {{ chart_denuncias_departamento }}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row mb-4">
+        <div class="col-md-6 mb-4">
+            <div class="card border-0 shadow-sm h-100">
+                <div class="card-body">
+                    {{ chart_denuncias_semana }}
+                </div>
+            </div>
+        </div>
+        <div class="col-md-6 mb-4">
+            <div class="card border-0 shadow-sm h-100">
+                <div class="card-body">
+                    {{ chart_denuncias_mes }}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row mb-5">
+        <div class="col-12">
+            <div class="card border-0 shadow-sm">
+                <div class="card-body">
+                    <h5 class="card-title text-muted mb-3">Ciudadanos con Más Denuncias (Top 10)</h5>
+                    {{ chart_ciudadanos_top }}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row mb-5">
+        <div class="col-12">
+            <div class="card shadow-sm">
+                <div class="card-body">
+                    {{ chart_kpi9}}
+                </div>
+            </div>
         </div>
     </div>
 
@@ -34,7 +92,6 @@
         <div class="col-md-6 col-lg-3">
             <div class="card border-0 shadow-sm h-100">
                 <div class="card-body">
-                    <h6 class="card-title text-muted small mb-3">Estado de Denuncias</h6>
                     <div class="mb-2">
                         <small class="text-muted">Pendientes</small>
                         <div class="progress" style="height: 6px;">

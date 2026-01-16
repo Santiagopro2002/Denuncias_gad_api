@@ -221,6 +221,7 @@ class Departamentos(models.Model):
     id = models.BigAutoField(primary_key=True)
     nombre = models.CharField(unique=True, max_length=120)
     activo = models.BooleanField()
+    color_hex = models.CharField(max_length=7, blank=True, null=True)
     created_at = models.DateTimeField()
     updated_at = models.DateTimeField()
 

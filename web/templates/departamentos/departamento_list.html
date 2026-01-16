@@ -22,6 +22,7 @@
                                     <th class="border-0">Nombre</th>
                                     <th class="border-0">Estado</th>
                                     <th class="border-0">Fecha Creación</th>
+                                    <th class="border-0">Color</th>
                                     <th class="border-0 text-center">Acciones</th>
                                 </tr>
                             </thead>
@@ -44,6 +45,9 @@
                                     <td>
                                         <i class="bi bi-calendar text-muted me-1"></i>
                                         {{ departamento.created_at|date:"d/m/Y H:i" }}
+                                    </td>
+                                    <td>
+                                        <div style="width: 30px; height: 30px; background-color: {{ departamento.color_hex }}; border-radius: 4px; border: 1px solid #ccc;"></div>
                                     </td>
                                     <td class="text-center">
                                         <div class="btn-group" role="group">
@@ -68,7 +72,7 @@
                                 </tr>
                                 {% empty %}
                                 <tr>
-                                    <td colspan="5" class="text-center py-4">
+                                    <td colspan="6" class="text-center py-4">
                                         <div class="text-muted">
                                             <i class="bi bi-inbox fs-1 d-block mb-2"></i>
                                             No hay departamentos registrados
@@ -82,41 +86,59 @@
                 </div>
             </div>
 
-            {% if is_paginated %}
-            <div class="d-flex justify-content-center mt-4">
+            <!-- Paginación -->
+        {% if is_paginated %}
+        <div class="card-footer bg-white border-top-0">
+            <div class="d-flex justify-content-between align-items-center">
+                <div class="text-muted small">
+                    Mostrando {{ page_obj.start_index }} - {{ page_obj.end_index }} de {{ paginator.count }} registros
+                </div>
                 <nav aria-label="Navegación de páginas">
-                    <ul class="pagination">
+                    <ul class="pagination pagination-sm mb-0">
                         {% if page_obj.has_previous %}
                         <li class="page-item">
-                            <a class="page-link" href="?page={{ page_obj.previous_page_number }}">
-                                <i class="bi bi-chevron-left"></i>
-                            </a>
+                            <a class="page-link" href="?page=1">&laquo; Primera</a>
                         </li>
-                        {% endif %}
-
-                        {% for num in page_obj.paginator.page_range %}
-                        {% if page_obj.number == num %}
-                        <li class="page-item active">
-                            <span class="page-link">{{ num }}</span>
-                        </li>
-                        {% elif num > page_obj.number|add:'-3' and num < page_obj.number|add:'3' %}
                         <li class="page-item">
-                            <a class="page-link" href="?page={{ num }}">{{ num }}</a>
+                            <a class="page-link" href="?page={{ page_obj.previous_page_number }}">Anterior</a>
+                        </li>
+                        {% else %}
+                        <li class="page-item disabled">
+                            <span class="page-link">&laquo; Primera</span>
+                        </li>
+                        <li class="page-item disabled">
+                            <span class="page-link">Anterior</span>
                         </li>
                         {% endif %}
+                        
+                        {% for num in page_obj.paginator.page_range %}
+                            {% if page_obj.number == num %}
+                            <li class="page-item active"><span class="page-link">{{ num }}</span></li>
+                            {% elif num > page_obj.number|add:'-3' and num < page_obj.number|add:'3' %}
+                            <li class="page-item"><a class="page-link" href="?page={{ num }}">{{ num }}</a></li>
+                            {% endif %}
                         {% endfor %}
-
+                        
                         {% if page_obj.has_next %}
                         <li class="page-item">
-                            <a class="page-link" href="?page={{ page_obj.next_page_number }}">
-                                <i class="bi bi-chevron-right"></i>
-                            </a>
+                            <a class="page-link" href="?page={{ page_obj.next_page_number }}">Siguiente</a>
+                        </li>
+                        <li class="page-item">
+                            <a class="page-link" href="?page={{ paginator.num_pages }}">Última &raquo;</a>
+                        </li>
+                        {% else %}
+                        <li class="page-item disabled">
+                            <span class="page-link">Siguiente</span>
+                        </li>
+                        <li class="page-item disabled">
+                            <span class="page-link">Última &raquo;</span>
                         </li>
                         {% endif %}
                     </ul>
                 </nav>
             </div>
-            {% endif %}
+        </div>
+        {% endif %}
         </div>
     </div>
 </div>

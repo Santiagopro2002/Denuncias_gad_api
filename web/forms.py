@@ -9,6 +9,7 @@ from django.contrib.auth.mixins import LoginRequiredMixin
 from django.contrib.auth.models import User, Group, Permission
 from django.utils import timezone
 from django_select2.forms import ModelSelect2Widget, ModelSelect2MultipleWidget
+from django.contrib import messages
 
 
 # Definir PermissionRequiredMixin personalizado aquí para evitar imports circulares
@@ -27,6 +28,45 @@ class PermissionRequiredMixin(DjangoPermissionRequiredMixin):
     def handle_no_permission(self):
         """Renderiza la página de error 403 personalizada en lugar de lanzar excepción"""
         return render(self.request, 'errors/403.html', status=403)
+
+
+class CrudMessageMixin:
+    """Mixin para agregar mensajes automáticos en operaciones CRUD con izitoast"""
+    
+    def get_create_message(self, obj):
+        """Mensaje personalizado para creación"""
+        return f"{self.model._meta.verbose_name} creado correctamente"
+    
+    def get_update_message(self, obj):
+        """Mensaje personalizado para actualización"""
+        return f"{self.model._meta.verbose_name} actualizado correctamente"
+    
+    def get_delete_message(self, obj):
+        """Mensaje personalizado para eliminación"""
+        return f"{self.model._meta.verbose_name} eliminado correctamente"
+    
+    def form_valid(self, form):
+        """Interceptar form_valid para agregar mensaje en Create y Update"""
+        response = super().form_valid(form)
+        
+        # Determinar el tipo de operación
+        is_create = not self.object.pk or self.object.pk == form.instance.pk
+        
+        if isinstance(self, CreateView):
+            message = self.get_create_message(self.object)
+            messages.success(self.request, message)
+        elif isinstance(self, UpdateView):
+            message = self.get_update_message(self.object)
+            messages.success(self.request, message)
+        
+        return response
+    
+    def delete(self, request, *args, **kwargs):
+        """Interceptar delete para agregar mensaje en Delete"""
+        obj = self.get_object()
+        message = self.get_delete_message(obj)
+        messages.success(request, message)
+        return super().delete(request, *args, **kwargs)
 
 class MenuForm(forms.ModelForm):
     class Meta:
@@ -86,7 +126,7 @@ class FuncionarioForm(forms.ModelForm):
         widget=ModelSelect2Widget(
             model=User,
             search_fields=['username__icontains', 'email__icontains'],
-            attrs={'data-placeholder': 'Buscar usuario...', 'class': 'form-control'}
+            attrs={'id': 'id_web_user', 'data-placeholder': 'Buscar usuario...', 'class': 'form-control'}
         )
     )
     
@@ -97,7 +137,8 @@ class FuncionarioForm(forms.ModelForm):
             model=Departamentos,
             search_fields=['nombre__icontains'],
             attrs={'data-placeholder': 'Buscar departamento...', 'class': 'form-control'}
-        )
+        ),
+        required=False
     )
     
     class Meta:
@@ -105,8 +146,8 @@ class FuncionarioForm(forms.ModelForm):
         fields = ['web_user', 'cedula', 'nombres', 'apellidos', 'telefono', 'departamento', 'cargo', 'activo']
         widgets = {
             'cedula': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'Ingrese la cédula'}),
-            'nombres': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'Ingrese los nombres'}),
-            'apellidos': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'Ingrese los apellidos'}),
+            'nombres': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'Ingrese los nombres', 'readonly': 'readonly'}),
+            'apellidos': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'Ingrese los apellidos', 'readonly': 'readonly'}),
             'telefono': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'Ingrese el teléfono'}),
             'cargo': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'Ingrese el cargo'}),
             'activo': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
@@ -141,7 +182,7 @@ class FuncionarioForm(forms.ModelForm):
             instance.save()
         return instance
 
-class FuncionariosCreateView(LoginRequiredMixin, PermissionRequiredMixin, CreateView):
+class FuncionariosCreateView(CrudMessageMixin, LoginRequiredMixin, PermissionRequiredMixin, CreateView):
     model = Funcionarios
     form_class = FuncionarioForm
     template_name = 'funcionarios/funcionario_form.html'
@@ -150,6 +191,8 @@ class FuncionariosCreateView(LoginRequiredMixin, PermissionRequiredMixin, Create
     login_url = 'web:login'
     permission_denied_message = 'No tienes permiso para crear funcionarios'
 
+    
+
 class FuncionariosDetailView(LoginRequiredMixin, PermissionRequiredMixin, DetailView):
     model = Funcionarios
     template_name = 'funcionarios/funcionario_detail.html'
@@ -157,7 +200,7 @@ class FuncionariosDetailView(LoginRequiredMixin, PermissionRequiredMixin, Detail
     permission_required = 'db.view_funcionarios'
     login_url = 'web:login'
 
-class FuncionariosUpdateView(LoginRequiredMixin, PermissionRequiredMixin, UpdateView):
+class FuncionariosUpdateView(CrudMessageMixin, LoginRequiredMixin, PermissionRequiredMixin, UpdateView):
     model = Funcionarios
     form_class = FuncionarioForm
     template_name = 'funcionarios/funcionario_form.html'
@@ -165,7 +208,7 @@ class FuncionariosUpdateView(LoginRequiredMixin, PermissionRequiredMixin, Update
     permission_required = 'db.change_funcionarios'
     login_url = 'web:login'
 
-class FuncionariosDeleteView(LoginRequiredMixin, PermissionRequiredMixin, DeleteView):
+class FuncionariosDeleteView(CrudMessageMixin, LoginRequiredMixin, PermissionRequiredMixin, DeleteView):
     model = Funcionarios
     template_name = 'funcionarios/funcionario_confirm_delete.html'
     success_url = '/web/funcionarios/'
@@ -186,10 +229,11 @@ class FuncionariosListView(LoginRequiredMixin, PermissionRequiredMixin, ListView
 class DepartamentoForm(forms.ModelForm):
     class Meta:
         model = Departamentos
-        fields = ['nombre', 'activo']
+        fields = ['nombre', 'activo', 'color_hex']
         widgets = {
             'nombre': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'Ingrese el nombre del departamento'}),
             'activo': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
+            'color_hex': forms.TextInput(attrs={'class': 'form-control', 'type': 'color'}),
         }
 
     def save(self, commit=True):
@@ -203,7 +247,7 @@ class DepartamentoForm(forms.ModelForm):
         return instance
 
 
-class DepartamentosCreateView(LoginRequiredMixin, PermissionRequiredMixin, CreateView):
+class DepartamentosCreateView(CrudMessageMixin, LoginRequiredMixin, PermissionRequiredMixin, CreateView):
     model = Departamentos
     form_class = DepartamentoForm
     template_name = 'departamentos/departamento_form.html'
@@ -217,7 +261,7 @@ class DepartamentosDetailView(LoginRequiredMixin, PermissionRequiredMixin, Detai
     permission_required = 'db.view_departamentos'
     login_url = 'web:login'
 
-class DepartamentosUpdateView(LoginRequiredMixin, PermissionRequiredMixin, UpdateView):
+class DepartamentosUpdateView(CrudMessageMixin, LoginRequiredMixin, PermissionRequiredMixin, UpdateView):
     model = Departamentos
     form_class = DepartamentoForm
     template_name = 'departamentos/departamento_form.html'
@@ -225,7 +269,7 @@ class DepartamentosUpdateView(LoginRequiredMixin, PermissionRequiredMixin, Updat
     permission_required = 'db.change_departamentos'
     login_url = 'web:login'
 
-class DepartamentosDeleteView(LoginRequiredMixin, PermissionRequiredMixin, DeleteView):
+class DepartamentosDeleteView(CrudMessageMixin, LoginRequiredMixin, PermissionRequiredMixin, DeleteView):
     model = Departamentos
     template_name = 'departamentos/departamento_confirm_delete.html'
     success_url = '/web/departamentos/'
@@ -236,13 +280,22 @@ class DepartamentosListView(LoginRequiredMixin, PermissionRequiredMixin, ListVie
     model = Departamentos
     template_name = 'departamentos/departamento_list.html'
     context_object_name = 'departamentos'
-    paginate_by = 10
+    paginate_by = 5
     permission_required = 'db.view_departamentos'
     login_url = 'web:login'
     def get_queryset(self):
         return Departamentos.objects.all().order_by('nombre')
 
 class WebUserForm(forms.ModelForm):
+    groups = forms.ModelMultipleChoiceField(
+        queryset=Group.objects.all(),
+        required=False,
+        widget=ModelSelect2MultipleWidget(
+            model=Group,
+            search_fields=['name__icontains'],
+            attrs={'class': 'form-control', 'multiple': 'multiple', 'data-placeholder': 'Buscar grupos...'}
+        )
+    )
     password = forms.CharField(
         required=False,
         widget=forms.PasswordInput(attrs={'class': 'form-control', 'placeholder': 'Dejar en blanco para no cambiar'}),
@@ -264,7 +317,6 @@ class WebUserForm(forms.ModelForm):
             'is_staff': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
             'is_active': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
             'is_superuser': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
-            'groups': forms.SelectMultiple(attrs={'class': 'form-select', 'multiple': 'multiple'}),
             'user_permissions': forms.CheckboxSelectMultiple(attrs={'class': 'form-check-input'}),
             'last_login': forms.DateTimeInput(attrs={'class': 'form-control', 'type': 'datetime-local'}),
             'date_joined': forms.DateTimeInput(attrs={'class': 'form-control', 'type': 'datetime-local'}),
@@ -284,7 +336,7 @@ class WebUserForm(forms.ModelForm):
         if self.instance and self.instance.pk:
             self.fields['password'].initial = ''
 
-class WebUserCreateView(LoginRequiredMixin, PermissionRequiredMixin, CreateView):
+class WebUserCreateView(CrudMessageMixin, LoginRequiredMixin, PermissionRequiredMixin, CreateView):
     model = User
     form_class = WebUserForm
     template_name = 'webusers/webuser_form.html'
@@ -329,7 +381,7 @@ class WebUserDetailView(LoginRequiredMixin, PermissionRequiredMixin, DetailView)
         context['permissions'] = self.object.user_permissions.all()
         return context
 
-class WebUserUpdateView(LoginRequiredMixin, PermissionRequiredMixin, UpdateView):
+class WebUserUpdateView(CrudMessageMixin, LoginRequiredMixin, PermissionRequiredMixin, UpdateView):
     model = User
     form_class = WebUserForm
     template_name = 'webusers/webuser_form.html'
@@ -362,7 +414,7 @@ class WebUserUpdateView(LoginRequiredMixin, PermissionRequiredMixin, UpdateView)
         form.fields['password'].help_text = 'Dejar en blanco para no cambiar la contraseña'
         return form
 
-class WebUserDeleteView(LoginRequiredMixin, PermissionRequiredMixin, DeleteView):
+class WebUserDeleteView(CrudMessageMixin, LoginRequiredMixin, PermissionRequiredMixin, DeleteView):
     model = User
     template_name = 'webusers/webuser_confirm_delete.html'
     context_object_name = 'web_user_delete'
@@ -378,7 +430,8 @@ class WebUserListView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
     permission_required = 'auth.view_user'
     login_url = 'web:login'
     def get_queryset(self):
-        return User.objects.all().order_by('username')
+        user_qs = User.objects.all().order_by('username').prefetch_related('funcionarios_set')
+        return user_qs
 
 
 class FaqForm(forms.ModelForm):

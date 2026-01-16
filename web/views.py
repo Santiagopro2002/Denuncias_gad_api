@@ -14,6 +14,13 @@ from django.contrib.auth.mixins import LoginRequiredMixin
 from django.utils import timezone
 from .forms import *
 from django.contrib.auth.decorators import login_required, permission_required
+from .forms import CrudMessageMixin
+from openai import OpenAI
+from django.conf import settings
+from chartkick.django import PieChart, BarChart, ColumnChart, LineChart
+
+api_key = getattr(settings, 'OPENAI_API_KEY', None)
+client = OpenAI(api_key=api_key)
 
 def get_uuid():
     """Genera un UUID4 como cadena"""
@@ -42,7 +49,11 @@ class CustomLoginView(LoginView):
     def get(self, request, *args, **kwargs):
         """Redirecciona a dashboard si el usuario ya está autenticado"""
         if request.user.is_authenticated:
-            return redirect('web:dashboard')
+            is_funcionario = Funcionarios.objects.filter(web_user=request.user).exists()
+            if is_funcionario:
+                return redirect('web:dashboard')
+            else:
+                return redirect('web:home')
         return super().get(request, *args, **kwargs)
 
 def home_view(request):
@@ -53,51 +64,201 @@ def home_view(request):
     faqs = Faq.objects.filter(visible=True)
     return render(request, 'home.html', {'faqs': faqs})
 
+
+@login_required
+def get_user_data_ajax(request, user_id):
+    """Vista AJAX que devuelve los datos del usuario para autocompletar el formulario"""
+    from django.http import JsonResponse
+    try:
+        user = User.objects.get(id=user_id)
+        return JsonResponse({
+            'success': True,
+            'first_name': user.first_name or '',
+            'last_name': user.last_name or '',
+            'email': user.email or '',
+        })
+    except User.DoesNotExist:
+        return JsonResponse({'success': False, 'error': 'Usuario no encontrado'})
+
     
 def dashboard_view(request):
     """Vista para el panel de control con KPIs"""
     from django.db.models import Count, Q
     from datetime import timedelta
     from django.utils import timezone
+    from django.db.models.functions import TruncWeek, TruncMonth
+    # Importar los gráficos necesarios
+    from chartkick.django import PieChart, BarChart, ColumnChart, LineChart
+
+    funcionario = Funcionarios.objects.filter(web_user=request.user).first()
+
+    if not funcionario:
+        return render(request, 'errors/403.html', status=403)
+
+    current_user_department = funcionario.departamento if funcionario else None
+
+    # Filtrar todo por el departamento del usuario si existe
+    denuncias_qs = Denuncias.objects.all()
+    funcionarios_qs = Funcionarios.objects.all()
+    departamentos_qs = Departamentos.objects.all()
+
+    if current_user_department:
+        denuncias_qs = denuncias_qs.filter(asignado_departamento=current_user_department)
+        funcionarios_qs = funcionarios_qs.filter(departamento=current_user_department)
+        departamentos_qs = departamentos_qs.filter(pk=current_user_department.pk)
     
     # Período de últimos 30 días
     fecha_hace_30_dias = timezone.now() - timedelta(days=30)
+
+    # Útlima semana a partir de hoy
+    fecha_hace_7_dias = timezone.now() - timedelta(days=7)
     
     # KPI 1: Total de Denuncias
-    total_denuncias = Denuncias.objects.count()
-    denuncias_este_mes = Denuncias.objects.filter(created_at__gte=fecha_hace_30_dias).count()
+    total_denuncias = denuncias_qs.count()
+    denuncias_este_mes = denuncias_qs.filter(created_at__gte=fecha_hace_30_dias).count()
     
     # KPI 2: Estados de Denuncias
-    denuncias_pendientes = Denuncias.objects.filter(estado='pendiente').count()
-    denuncias_en_proceso = Denuncias.objects.filter(estado='en_proceso').count()
-    denuncias_resueltas = Denuncias.objects.filter(estado='resuelto').count()
+    denuncias_pendientes = denuncias_qs.filter(estado='pendiente').count()
+    denuncias_en_proceso = denuncias_qs.filter(estado='en_proceso').count()
+    denuncias_resueltas = denuncias_qs.filter(estado='resuelto').count()
+
+    chart_kpi2 = ColumnChart({
+        'Pendientes': denuncias_pendientes,
+        'En Proceso': denuncias_en_proceso,
+        'Resueltas': denuncias_resueltas,
+    },
+    title="Denuncias por estado",
+    download={'filename': 'chart_kpi2'}
+    )
     
-    # KPI 3: Total de Ciudadanos
+    # KPI 3: Total de Ciudadanos (global)
     total_ciudadanos = Ciudadanos.objects.count()
     ciudadanos_este_mes = Ciudadanos.objects.filter(created_at__gte=fecha_hace_30_dias).count()
     
-    # KPI 4: Total de Funcionarios
-    total_funcionarios = Funcionarios.objects.count()
-    funcionarios_activos = Funcionarios.objects.filter(activo=True).count()
+    # KPI 4: Total de Funcionarios (filtrados por departamento si aplica)
+    total_funcionarios = funcionarios_qs.count()
+    funcionarios_activos = funcionarios_qs.filter(activo=True).count()
     
-    # KPI 5: Total de Departamentos
-    total_departamentos = Departamentos.objects.count()
-    departamentos_activos = Departamentos.objects.filter(activo=True).count()
+    # KPI 5: Total de Departamentos (filtrado si aplica)
+    total_departamentos = departamentos_qs.count()
+    departamentos_activos = departamentos_qs.filter(activo=True).count()
     
     # KPI 6: Promedio de denuncias por departamento
     promedio_denuncias_depto = total_denuncias / max(departamentos_activos, 1)
     
-    # KPI 7: Denuncias por tipo
-    denuncias_por_tipo = Denuncias.objects.values('tipo_denuncia__nombre').annotate(
+    # KPI 7: Denuncias por tipo (filtradas)
+    denuncias_por_tipo = denuncias_qs.values('tipo_denuncia__nombre').annotate(
         count=Count('id')
     ).order_by('-count')[:5]
+
+    chart_kpi7 = PieChart(
+        dict((item['tipo_denuncia__nombre'], item['count']) for item in denuncias_por_tipo),
+        title="Denuncias por tipo",
+        download={'filename': 'chart_kpi7'},
+        donut=True
+        )
     
-    # KPI 8: Departamentos con más denuncias
-    departamentos_con_denuncias = Denuncias.objects.filter(
+    # KPI 8: Departamentos con más denuncias (filtradas)
+    departamentos_con_denuncias = denuncias_qs.filter(
         asignado_departamento__isnull=False
     ).values('asignado_departamento__nombre').annotate(
         count=Count('id')
     ).order_by('-count')[:5]
+
+    # KPI 9: Número de denuncias por día de la última semana
+    denuncias_ultima_semana = denuncias_qs.filter(
+        created_at__gte=fecha_hace_7_dias
+    ).extra({
+        'dia': "DATE(created_at)"
+    }).values('dia').annotate(
+        count=Count('id')
+    ).order_by('dia')
+
+    kpi9_chart_data = {item['dia'].strftime('%Y-%m-%d'): item['count'] for item in denuncias_ultima_semana}
+    chart_kpi9 = LineChart(
+        kpi9_chart_data,
+        title="Denuncias en la última semana",
+        xtitle="Día",
+        ytitle="Cantidad",
+        download={'filename': 'chart_kpi9'}
+    )
+    
+    # 1. Diagrama de barra por numero de denuncias por departamento
+    denuncias_por_departamento_data = denuncias_qs.filter(
+        asignado_departamento__isnull=False
+    ).values('asignado_departamento__nombre', 'asignado_departamento__color_hex').annotate(
+        count=Count('id')
+    ).order_by('-count')
+    
+    dept_data = {}
+    dept_colors = []
+    
+    for item in denuncias_por_departamento_data:
+        dept_data[item['asignado_departamento__nombre']] = item['count']
+        # Usar color del departamento o un default si no tiene
+        dept_colors.append(item['asignado_departamento__color_hex'] or "#0d6efd")
+
+    chart_denuncias_departamento = BarChart(
+        dept_data,
+        title="Número de Denuncias por Departamento",
+        xtitle="Cantidad",
+        ytitle="Departamento",
+        colors=dept_colors
+    )
+
+    # 2. Diagrama de barras por ciudadano con más denuncias (Top 10)
+    ciudadanos_top_data = denuncias_qs.values(
+        'ciudadano__nombres', 'ciudadano__apellidos'
+    ).annotate(
+        count=Count('id')
+    ).order_by('-count')[:10]
+
+    chart_ciudadanos_top = BarChart(
+        {f"{item['ciudadano__nombres']} {item['ciudadano__apellidos']}": item['count'] for item in ciudadanos_top_data},
+        title="Ciudadanos con más Denuncias (Top 10)",
+        xtitle="Cantidad",
+        ytitle="Ciudadano"
+    )
+
+    # 3. Denuncias por semana
+    denuncias_semana_data = denuncias_qs.annotate(
+        semana=TruncWeek('created_at')
+    ).values('semana').annotate(
+        count=Count('id')
+    ).order_by('semana')[:3]
+    
+    chart_denuncias_semana = LineChart(
+        {item['semana'].strftime('%Y-%m-%d'): item['count'] for item in denuncias_semana_data},
+        title="Denuncias por Semana",
+        xtitle="Semana",
+        ytitle="Cantidad",
+        download={'filename': 'chart_denuncias_semana'}
+    )
+
+    # 4. Denuncias por mes
+    denuncias_mes_data = denuncias_qs.annotate(
+        mes=TruncMonth('created_at')
+    ).values('mes').annotate(
+        count=Count('id')
+    ).order_by('mes')[:5]
+
+    chart_denuncias_mes = LineChart(
+        {item['mes'].strftime('%Y-%m'): item['count'] for item in denuncias_mes_data},
+        title="Denuncias por Mes",
+        xtitle="Mes",
+        ytitle="Cantidad"
+    )
+
+    # 5. Pastel donde se vea el total de denuncias resueltas vs pendientes
+    chart_estado_denuncias = PieChart(
+        {
+            'Resueltas': denuncias_resueltas,
+            'Pendientes': denuncias_pendientes,
+            'En Proceso': denuncias_en_proceso
+        },
+        title="Estado de Denuncias (Resueltas vs Pendientes)",
+        donut=True
+    )
     
     # Tasa de resolución
     if total_denuncias > 0:
@@ -106,9 +267,9 @@ def dashboard_view(request):
         tasa_resolucion = 0
     
     # Denuncias con coordenadas para el mapa
-    denuncias_mapa = Denuncias.objects.select_related(
+    denuncias_mapa = denuncias_qs.select_related(
         'ciudadano', 'tipo_denuncia', 'asignado_departamento'
-    ).all()[:100]  # Limitar a 100 para rendimiento
+    )[:100]  # Limitar a 100 para rendimiento
     
     context = {
         'total_denuncias': total_denuncias,
@@ -127,6 +288,21 @@ def dashboard_view(request):
         'departamentos_con_denuncias': departamentos_con_denuncias,
         'tasa_resolucion': round(tasa_resolucion, 1),
         'denuncias_mapa': denuncias_mapa,
+        'chart_denuncias_departamento': chart_denuncias_departamento,
+        'chart_ciudadanos_top': chart_ciudadanos_top,
+        'chart_denuncias_semana': chart_denuncias_semana,
+        'chart_denuncias_mes': chart_denuncias_mes,
+        'chart_estado_denuncias': chart_estado_denuncias,        'funcionarios_activos': funcionarios_activos,
+        'total_departamentos': total_departamentos,
+        'departamentos_activos': departamentos_activos,
+        'promedio_denuncias_depto': round(promedio_denuncias_depto, 2),
+        'denuncias_por_tipo': denuncias_por_tipo,
+        'departamentos_con_denuncias': departamentos_con_denuncias,
+        'tasa_resolucion': round(tasa_resolucion, 1),
+        'denuncias_mapa': denuncias_mapa,
+        'chart_kpi2': chart_kpi2,
+        'chart_kpi7': chart_kpi7,
+        'chart_kpi9': chart_kpi9,
     }
     
     return render(request, 'dashboard.html', context)
@@ -142,7 +318,7 @@ class GrupoListView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
     ordering = ['name']
     paginate_by = 15
 
-class GrupoCreateView(LoginRequiredMixin, PermissionRequiredMixin, CreateView):
+class GrupoCreateView(CrudMessageMixin, LoginRequiredMixin, PermissionRequiredMixin, CreateView):
     model = Group
     form_class = GrupoForm
     template_name = 'grupos/grupo_form.html'
@@ -150,13 +326,35 @@ class GrupoCreateView(LoginRequiredMixin, PermissionRequiredMixin, CreateView):
     permission_required = 'auth.add_group'
     login_url = 'web:login'
 
-class GrupoUpdateView(LoginRequiredMixin, PermissionRequiredMixin, UpdateView):
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        form = context.get('form')
+        if form:
+            if form.is_bound:
+                selected_ids = [str(pk) for pk in form.data.getlist('permissions')]
+            else:
+                selected_ids = []
+            context['selected_ids'] = selected_ids
+        return context
+
+class GrupoUpdateView(CrudMessageMixin, LoginRequiredMixin, PermissionRequiredMixin, UpdateView):
     model = Group
     form_class = GrupoForm
     template_name = 'grupos/grupo_form.html'
     success_url = reverse_lazy('web:grupo_list')
     permission_required = 'auth.change_group'
     login_url = 'web:login'
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        form = context.get('form')
+        if form:
+            if form.is_bound:
+                selected_ids = form.data.getlist('permissions')
+            else:
+                selected_ids = list(form.instance.permissions.values_list('id', flat=True)) if form.instance.pk else []
+            context['selected_ids'] = [str(pk) for pk in selected_ids]
+        return context
 
 class GrupoDetailView(LoginRequiredMixin, PermissionRequiredMixin, DetailView):
     model = Group
@@ -165,7 +363,7 @@ class GrupoDetailView(LoginRequiredMixin, PermissionRequiredMixin, DetailView):
     permission_required = 'auth.view_group'
     login_url = 'web:login'
 
-class GrupoDeleteView(LoginRequiredMixin, PermissionRequiredMixin, DeleteView):
+class GrupoDeleteView(CrudMessageMixin, LoginRequiredMixin, PermissionRequiredMixin, DeleteView):
     model = Group
     template_name = 'grupos/grupo_confirm_delete.html'
     success_url = reverse_lazy('web:grupo_list')
@@ -223,7 +421,7 @@ class FaqListView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
     ordering = ['-created_at']
     paginate_by = 15
 
-class FaqCreateView(LoginRequiredMixin, PermissionRequiredMixin, CreateView):
+class FaqCreateView(CrudMessageMixin, LoginRequiredMixin, PermissionRequiredMixin, CreateView):
     model = Faq
     form_class = FaqForm
     template_name = 'faqs/faq_form.html'
@@ -237,7 +435,7 @@ class FaqCreateView(LoginRequiredMixin, PermissionRequiredMixin, CreateView):
         form.instance.updated_at = timezone.now()
         return super().form_valid(form)
 
-class FaqUpdateView(LoginRequiredMixin, PermissionRequiredMixin, UpdateView):
+class FaqUpdateView(CrudMessageMixin, LoginRequiredMixin, PermissionRequiredMixin, UpdateView):
     model = Faq
     form_class = FaqForm
     template_name = 'faqs/faq_form.html'
@@ -249,7 +447,7 @@ class FaqUpdateView(LoginRequiredMixin, PermissionRequiredMixin, UpdateView):
         form.instance.updated_at = timezone.now()
         return super().form_valid(form)
 
-class FaqDeleteView(LoginRequiredMixin, PermissionRequiredMixin, DeleteView):
+class FaqDeleteView(CrudMessageMixin, LoginRequiredMixin, PermissionRequiredMixin, DeleteView):
     model = Faq
     template_name = 'faqs/faq_confirm_delete.html'
     success_url = reverse_lazy('web:faq_list')
@@ -282,13 +480,25 @@ class DenunciaListView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
             'ciudadano', 'tipo_denuncia', 'asignado_departamento', 'asignado_funcionario'
         )
 
-        # Restricción por usuario (no superuser)
-        if not self.request.user.is_superuser:
+        funcionario = Funcionarios.objects.filter(web_user=self.request.user).first()
+
+        user_is_superuser = self.request.user.is_superuser
+        user_has_funcionario = funcionario is not None
+
+        # Restricción por usuario:
+        # 1. Superusuarios: Ven todo
+        # 2. Funcionarios: Ven solo lo asignado
+        # 3. Otros (sin rol): No ven nada
+        if user_is_superuser or not user_has_funcionario:
+            pass
+        elif user_has_funcionario:
             qs = qs.filter(
                 Q(asignado_funcionario__web_user=self.request.user)
                 | Q(denunciaasignaciones__funcionario__web_user=self.request.user,
                     denunciaasignaciones__activo=True)
             ).distinct()
+        else:
+            qs = Denuncias.objects.none()
 
         # Filtros GET
         estado = self.request.GET.get('estado')
@@ -374,7 +584,7 @@ class DenunciaDetailView(LoginRequiredMixin, PermissionRequiredMixin, DetailView
             
         return context
 
-class DenunciaUpdateView(LoginRequiredMixin, PermissionRequiredMixin, UpdateView):
+class DenunciaUpdateView(CrudMessageMixin, LoginRequiredMixin, PermissionRequiredMixin, UpdateView):
     model = Denuncias
     form_class = DenunciaForm
     template_name = 'denuncias/denuncia_form.html'
@@ -400,7 +610,7 @@ class DenunciaUpdateView(LoginRequiredMixin, PermissionRequiredMixin, UpdateView
             )
         return super().form_valid(form)
 
-class DenunciaDeleteView(LoginRequiredMixin, PermissionRequiredMixin, DeleteView):
+class DenunciaDeleteView(CrudMessageMixin, LoginRequiredMixin, PermissionRequiredMixin, DeleteView):
     model = Denuncias
     template_name = 'denuncias/denuncia_confirm_delete.html'
     success_url = reverse_lazy('web:denuncia_list')
@@ -464,7 +674,7 @@ class TipoDenunciaDepartamentoDetailView(LoginRequiredMixin, PermissionRequiredM
     def get_queryset(self):
         return TipoDenunciaDepartamento.objects.select_related('tipo_denuncia', 'departamento')
 
-class TipoDenunciaDepartamentoCreateView(LoginRequiredMixin, PermissionRequiredMixin, CreateView):
+class TipoDenunciaDepartamentoCreateView(CrudMessageMixin, LoginRequiredMixin, PermissionRequiredMixin, CreateView):
     model = TipoDenunciaDepartamento
     form_class = TipoDenunciaDepartamentoForm
     template_name = 'tipo_denuncia_departamento/tipo_denuncia_departamento_form.html'
@@ -477,7 +687,7 @@ class TipoDenunciaDepartamentoCreateView(LoginRequiredMixin, PermissionRequiredM
         form.instance.updated_at = timezone.now()
         return super().form_valid(form)
 
-class TipoDenunciaDepartamentoUpdateView(LoginRequiredMixin, PermissionRequiredMixin, UpdateView):
+class TipoDenunciaDepartamentoUpdateView(CrudMessageMixin, LoginRequiredMixin, PermissionRequiredMixin, UpdateView):
     model = TipoDenunciaDepartamento
     form_class = TipoDenunciaDepartamentoForm
     template_name = 'tipo_denuncia_departamento/tipo_denuncia_departamento_form.html'
@@ -490,7 +700,7 @@ class TipoDenunciaDepartamentoUpdateView(LoginRequiredMixin, PermissionRequiredM
         form.instance.updated_at = timezone.now()
         return super().form_valid(form)
 
-class TipoDenunciaDepartamentoDeleteView(LoginRequiredMixin, PermissionRequiredMixin, DeleteView):
+class TipoDenunciaDepartamentoDeleteView(CrudMessageMixin, LoginRequiredMixin, PermissionRequiredMixin, DeleteView):
     model = TipoDenunciaDepartamento
     template_name = 'tipo_denuncia_departamento/tipo_denuncia_departamento_confirm_delete.html'
     success_url = reverse_lazy('web:tipo_denuncia_departamento_list')
@@ -529,7 +739,7 @@ class TiposDenunciaDetailView(LoginRequiredMixin, PermissionRequiredMixin, Detai
         context['total_denuncias'] = Denuncias.objects.filter(tipo_denuncia=self.object).count()
         return context
 
-class TiposDenunciaCreateView(LoginRequiredMixin, PermissionRequiredMixin, CreateView):
+class TiposDenunciaCreateView(CrudMessageMixin, LoginRequiredMixin, PermissionRequiredMixin, CreateView):
     model = TiposDenuncia
     form_class = TiposDenunciaForm
     template_name = 'tipos_denuncia/tipos_denuncia_form.html'
@@ -542,7 +752,7 @@ class TiposDenunciaCreateView(LoginRequiredMixin, PermissionRequiredMixin, Creat
         form.instance.updated_at = timezone.now()
         return super().form_valid(form)
 
-class TiposDenunciaUpdateView(LoginRequiredMixin, PermissionRequiredMixin, UpdateView):
+class TiposDenunciaUpdateView(CrudMessageMixin, LoginRequiredMixin, PermissionRequiredMixin, UpdateView):
     model = TiposDenuncia
     form_class = TiposDenunciaForm
     template_name = 'tipos_denuncia/tipos_denuncia_form.html'
@@ -555,7 +765,7 @@ class TiposDenunciaUpdateView(LoginRequiredMixin, PermissionRequiredMixin, Updat
         form.instance.updated_at = timezone.now()
         return super().form_valid(form)
 
-class TiposDenunciaDeleteView(LoginRequiredMixin, PermissionRequiredMixin, DeleteView):
+class TiposDenunciaDeleteView(CrudMessageMixin, LoginRequiredMixin, PermissionRequiredMixin, DeleteView):
     model = TiposDenuncia
     template_name = 'tipos_denuncia/tipos_denuncia_confirm_delete.html'
     success_url = reverse_lazy('web:tipos_denuncia_list')
@@ -587,16 +797,24 @@ class MisDenunciasListView(LoginRequiredMixin, ListView):
             # Filtrar denuncias asignadas directamente al funcionario
             # o a través de asignaciones activas
             from django.db.models import Q
-            
-            queryset = Denuncias.objects.filter(
-                Q(asignado_funcionario=funcionario) |
-                Q(denunciaasignaciones__funcionario=funcionario, denunciaasignaciones__activo=True)
-            ).distinct().select_related(
-                'ciudadano',
-                'tipo_denuncia',
-                'asignado_departamento',
-                'asignado_funcionario'
-            ).order_by('-created_at')
+
+            if funcionario is None:
+                queryset = Denuncias.objects.all().distinct().select_related(
+                    'ciudadano',
+                    'tipo_denuncia',
+                    'asignado_departamento',
+                    'asignado_funcionario'
+                ).order_by('-created_at')
+            else:
+                queryset = Denuncias.objects.filter(
+                    Q(asignado_funcionario=funcionario) |
+                    Q(denunciaasignaciones__funcionario=funcionario, denunciaasignaciones__activo=True)
+                ).distinct().select_related(
+                    'ciudadano',
+                    'tipo_denuncia',
+                    'asignado_departamento',
+                    'asignado_funcionario'
+                ).order_by('-created_at')
             
             # Filtros adicionales por parámetros GET
             estado = self.request.GET.get('estado')
@@ -639,3 +857,164 @@ class MisDenunciasListView(LoginRequiredMixin, ListView):
             context['es_funcionario'] = False
             
         return context
+
+from django.views.decorators.http import require_POST
+import json
+import re
+@login_required
+@require_POST
+def llm_response(request, denuncia_id):
+    import logging
+    from django.http import JsonResponse
+    logger = logging.getLogger(__name__)
+    
+    if not api_key:
+        logger.error("OPENAI_API_KEY no encontrada en settings.")
+        return JsonResponse({'error': 'Servicio de IA no configurado (Falta API Key)'}, status=503)
+
+    
+    try:
+        denuncia = Denuncias.objects.select_related(
+            'tipo_denuncia',
+            'asignado_departamento',
+            'asignado_funcionario__web_user'
+        ).get(id=denuncia_id)
+
+        if denuncia.estado == 'pendiente':
+            denuncia.estado = 'en_proceso'
+            denuncia.save()
+
+        prompt = f"""
+            Eres un asistente especializado en gestión de denuncias ciudadanas
+            para la Municipalidad de Salcedo, Cotopaxi, Ecuador.
+
+            Analiza la siguiente denuncia y responde EXCLUSIVAMENTE en JSON válido
+            sin texto adicional, sin markdown, sin comentarios.
+
+            Formato requerido:
+            {{
+            "resumen": "string",
+            "sugerencias_accion": "string"
+            }}
+
+            Datos de la denuncia:
+            - Ciudadano: {f"{denuncia.ciudadano.nombres} {denuncia.ciudadano.apellidos}" if denuncia.ciudadano else 'Desconocido'}
+            - Descripción: {denuncia.descripcion}
+            - Referencia: {denuncia.referencia}
+            - Tipo: {denuncia.tipo_denuncia.nombre}
+            - Estado: {denuncia.estado}
+            - Departamento: {denuncia.asignado_departamento.nombre if denuncia.asignado_departamento else 'No asignado'}
+            - Funcionario: {denuncia.asignado_funcionario.web_user.get_full_name() if denuncia.asignado_funcionario else 'No asignado'}
+
+            Responde al ciudadano en español, Con un tono empático y cercano para que el ciudadano se sienta escuchado.
+            Asegúrate de que el JSON esté correctamente formateado. 
+
+            """
+
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": "Eres un asistente útil que responde siempre en JSON."},
+                {"role": "user", "content": prompt}
+            ],
+            max_tokens=500,
+        )
+
+        raw_text = response.choices[0].message.content.strip()
+
+        match = re.search(r'\{.*\}', raw_text, re.DOTALL)
+        if not match:
+            if raw_text:
+                return JsonResponse({"response": raw_text})
+            raise ValueError("La respuesta no contiene JSON válido ni texto recuperable")
+
+        data = json.loads(match.group())
+        
+        formatted_response = f"RESUMEN:\n{data.get('resumen', '')}\n\nSUERENCIAS DE ACCIÓN:\n{data.get('sugerencias_accion', '')}"
+        
+        return JsonResponse({"success": True, "response": formatted_response})
+
+    except Denuncias.DoesNotExist:
+        return JsonResponse(
+            {"success": False, "error": "Denuncia no encontrada"},
+            status=404
+        )
+
+    except json.JSONDecodeError:
+        return JsonResponse(
+            {"success": False, "error": "Error al decodificar JSON del modelo"},
+            status=500
+        )
+
+    except Exception as e:
+            return JsonResponse(
+            {"success": False, "error": str(e)},
+            status=500
+        )
+    
+@require_POST
+@login_required
+def resolver_denuncia(request, denuncia_id):
+    """Marca una denuncia como resuelta."""
+    denuncia = Denuncias.objects.select_related(
+            'tipo_denuncia',
+            'asignado_departamento',
+            'asignado_funcionario__web_user'
+        ).get(id=denuncia_id)
+    
+    denuncia.estado = 'resuelto'
+    denuncia.save()
+
+    prompt = f"""
+            Eres un asistente especializado en gestión de denuncias ciudadanas
+            para la Municipalidad de Salcedo, Cotopaxi, Ecuador.
+
+            Datos de la denuncia:
+            - Ciudadano: {f"{denuncia.ciudadano.nombres} {denuncia.ciudadano.apellidos}" if denuncia.ciudadano else 'Desconocido'}
+            - Descripción: {denuncia.descripcion}
+            - Referencia: {denuncia.referencia}
+            - Tipo: {denuncia.tipo_denuncia.nombre}
+            - Estado: {denuncia.estado}
+            - Departamento: {denuncia.asignado_departamento.nombre if denuncia.asignado_departamento else 'No asignado'}
+            - Funcionario: {denuncia.asignado_funcionario.web_user.get_full_name() if denuncia.asignado_funcionario else 'No asignado'}
+
+            Responde al ciudadano en español, sin formato, solo texto.
+            Tu tono debe ser empático y cercano para que el ciudadano se sienta escuchado, sobre la resolución de su denuncia.
+
+            """
+    response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": "Eres un asistente útil que siempre responde en texto plano."},
+                {"role": "user", "content": prompt}
+            ],
+            max_tokens=500,
+        )
+
+    raw_text = response.choices[0].message.content.strip()
+
+
+
+    #Crear respuesta LLM automática
+    DenunciaHistorial.objects.create(
+            **{
+                "id": get_uuid(),
+                "estado_anterior": 'en_proceso',
+                "estado_nuevo": 'resuelto',
+                "comentario": "Denuncia marcada como resuelta.",
+                "cambiado_por_funcionario": Funcionarios.objects.get(user=request.user) if hasattr(request.user, 'funcionarios') else None,
+                "created_at": timezone.now(),
+                "denuncia_id": denuncia.id
+            }
+        )
+    
+    DenunciaRespuestas.objects.create(
+            id=get_uuid(),
+            denuncia=denuncia,
+            funcionario=request.user.funcionarios if hasattr(request.user, 'funcionarios') else None,
+            mensaje=raw_text,
+            created_at=timezone.now(),
+            updated_at=timezone.now(),
+        )
+
+    return redirect('web:denuncia_detail', pk=denuncia_id)
