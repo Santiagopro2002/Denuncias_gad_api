@@ -16,6 +16,8 @@ from .serializers_borradores import (
     DenunciaBorradorUpdateSerializer,
 )
 
+from db.models import DenunciaEvidencias, DenunciaFirmas
+
 # =========================
 # Helpers
 # =========================
@@ -75,6 +77,36 @@ def finalize_borrador_to_denuncia(b: DenunciaBorradores):
         created_at=now,
         updated_at=now,
     )
+        # ===== firma =====
+    firma_url = data.get("firma_url")
+    firma_base64 = data.get("firma_base64")  # por si luego usas base64
+
+    if firma_url or firma_base64:
+        DenunciaFirmas.objects.create(
+            id=uuid.uuid4(),
+            denuncia_id=denuncia.id,
+            firma_url=firma_url,
+            firma_base64=firma_base64,
+            created_at=now,
+            updated_at=now,
+        )
+
+    # ===== evidencias =====
+    evidencias = data.get("evidencias") or []
+    for ev in evidencias:
+        try:
+            DenunciaEvidencias.objects.create(
+                id=uuid.uuid4(),
+                denuncia_id=denuncia.id,
+                tipo=(ev.get("tipo") or "foto"),
+                url_archivo=(ev.get("url_archivo") or ""),
+                nombre_archivo=ev.get("nombre_archivo"),
+                created_at=now,
+                updated_at=now,
+            )
+        except Exception:
+            pass
+
 
     # Si viene de chat (opcional)
     if b.conversacion_id:
@@ -153,7 +185,7 @@ class BorradoresUpdateDeleteView(APIView):
         if borrador_expirado(b):
             return Response({"detail": "Borrador expirado: ya no se puede editar"}, status=409)
 
-        # ✅ UPDATE PARCIAL (solo lo que cambie)
+        #  UPDATE PARCIAL (solo lo que cambie)
         ser = DenunciaBorradorUpdateSerializer(data=request.data, partial=True)
         ser.is_valid(raise_exception=True)
         v = ser.validated_data

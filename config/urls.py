@@ -37,9 +37,6 @@ urlpatterns = [
     path("web/", include("web.urls")),
     path('', RedirectView.as_view(url='/web/', permanent=True)),
 
-
-    
-
 ]
 
 # Servir archivos estáticos y media (desarrollo y testing con DEBUG=False)
