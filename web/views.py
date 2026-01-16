@@ -44,17 +44,24 @@ def server_error_view(request):
 class CustomLoginView(LoginView):
     """LoginView personalizado que redirige usuarios autenticados al dashboard"""
     template_name = 'registration/login.html'
-    next_page = 'web:dashboard'
     
     def get(self, request, *args, **kwargs):
-        """Redirecciona a dashboard si el usuario ya está autenticado"""
         if request.user.is_authenticated:
             is_funcionario = Funcionarios.objects.filter(web_user=request.user).exists()
             if is_funcionario:
                 return redirect('web:dashboard')
             else:
-                return redirect('web:home')
+                return redirect('web:mis_denuncias')
         return super().get(request, *args, **kwargs)
+
+    def get_success_url(self):
+        if self.request.user.is_authenticated:
+            is_funcionario = Funcionarios.objects.filter(web_user=self.request.user).exists()
+            if is_funcionario:
+                return reverse_lazy('web:dashboard')
+            else:
+                return reverse_lazy('web:mis_denuncias')
+        return reverse_lazy('web:home')
 
 def home_view(request):
     """Vista para la página de inicio"""
